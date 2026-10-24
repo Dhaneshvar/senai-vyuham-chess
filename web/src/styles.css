@@ -226,3 +226,9 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
   .controls > label:first-of-type { margin-top: 0; }
   .controls .tabs { align-self:end; }
 }
+.online-steps { margin: 12px 0 0; padding: 9px 10px; border: 1px solid #3a5141; border-radius: 9px; background: #101812; color: #a9b8aa; font-size: 11px; line-height: 1.45; }
+.online-steps b { color: #b8f36a; }
+.room-code button { display:block; margin-top:7px; }
+.install-app-button { border:1px solid #b8f36a; border-radius:10px; background:#b8f36a; color:#101512; padding:9px 14px; font:inherit; font-size:12px; font-weight:900; cursor:pointer; box-shadow:0 8px 20px #0003; }
+.install-app-button:hover { background:#d0ff91; transform:translateY(-1px); }
+.footer-actions { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
