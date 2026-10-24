@@ -36,6 +36,7 @@ const hintDotGeometry = new THREE.SphereGeometry(.045, 8, 6);
 const hintCenterGeometry = new THREE.SphereGeometry(.115, 12, 8);
 const hintDotMaterial = new THREE.MeshBasicMaterial({ color: '#c9ff83', transparent: true, opacity: .94, depthWrite: false, depthTest: false });
 const selectedDotMaterial = new THREE.MeshBasicMaterial({ color: '#ffdb87', transparent: true, opacity: .98, depthWrite: false, depthTest: false });
+const safeChess = (fen) => { try { return new Chess(fen); } catch { return null; } };
 
 function mudTexture(light, variant) {
   const key = `${light}-${variant}`;
@@ -467,7 +468,7 @@ export function WebThreeBoard({ fen, moves = [], lastMove = null, status = 'acti
     let syncVersion = 0;
     let completedCaptureTarget = '';
     const sync = () => {
-      const version = ++syncVersion; pieces.clear(); capturedPieces.clear(); arrest.clear(); victory.clear(); draw.clear(); const chess = new Chess(fenRef.current); const boardPieces = chess.board().flat().filter(Boolean); const captures = capturedFromMoves(movesRef.current); const capturedByWhite = captures.filter((piece) => piece.color === 'b').sort((a, b) => ({ q: 9, r: 5, b: 3, n: 3, p: 1 }[b.type] ?? 0) - ({ q: 9, r: 5, b: 3, n: 3, p: 1 }[a.type] ?? 0)); const capturedByBlack = captures.filter((piece) => piece.color === 'w').sort((a, b) => ({ q: 9, r: 5, b: 3, n: 3, p: 1 }[b.type] ?? 0) - ({ q: 9, r: 5, b: 3, n: 3, p: 1 }[a.type] ?? 0)); const totalModels = boardPieces.length + captures.length; let settled = 0; let failed = 0;
+      const version = ++syncVersion; pieces.clear(); capturedPieces.clear(); arrest.clear(); victory.clear(); draw.clear(); const chess = safeChess(fenRef.current); if (!chess) { setAssetStatus('3D board waiting for a valid position'); return; } const boardPieces = chess.board().flat().filter(Boolean); const captures = capturedFromMoves(movesRef.current); const capturedByWhite = captures.filter((piece) => piece.color === 'b').sort((a, b) => ({ q: 9, r: 5, b: 3, n: 3, p: 1 }[b.type] ?? 0) - ({ q: 9, r: 5, b: 3, n: 3, p: 1 }[a.type] ?? 0)); const capturedByBlack = captures.filter((piece) => piece.color === 'w').sort((a, b) => ({ q: 9, r: 5, b: 3, n: 3, p: 1 }[b.type] ?? 0) - ({ q: 9, r: 5, b: 3, n: 3, p: 1 }[a.type] ?? 0)); const totalModels = boardPieces.length + captures.length; let settled = 0; let failed = 0;
       if (riggedArmyStyles.has(style)) setAssetStatus(`${presets[style].label} · ${quality === 'low' ? 'simplified ' : ''}rigged characters and four motion clips ready`); else if (importedCharacterStyles.has(style) && quality !== 'low') setAssetStatus(`Loading ${presets[style].label} characters · 0/${totalModels}`); else if (importedCharacterStyles.has(style)) setAssetStatus('Battery saver · lightweight character pieces active'); else setAssetStatus(`${presets[style].label} procedural set ready`);
       const addCharacter = (piece, parent, position, captured = false, square = '') => {
         const root = riggedArmyStyles.has(style) ? riggedArmyCharacter(piece, style, quality) : pieceMesh(piece, style);
@@ -524,7 +525,8 @@ export function WebThreeBoard({ fen, moves = [], lastMove = null, status = 'acti
       pointerDown = { x: event.clientX, y: event.clientY };
       setPointer(event); ray.setFromCamera(pointer, camera);
       const square = ray.intersectObjects(squares)[0]?.object.userData.square;
-      const chess = new Chess(fenRef.current);
+      const chess = safeChess(fenRef.current);
+      if (!chess) { controls.enabled = true; return; }
       controls.enabled = !square || (!selected.current && chess.get(square)?.color !== chess.turn());
     };
     let combatBusy = false;
@@ -576,7 +578,8 @@ export function WebThreeBoard({ fen, moves = [], lastMove = null, status = 'acti
       setPointer(event); ray.setFromCamera(pointer, camera);
       const square = ray.intersectObjects(squares)[0]?.object.userData.square;
       if (!square) return;
-      const chess = new Chess(fenRef.current);
+      const chess = safeChess(fenRef.current);
+      if (!chess) return;
       const move = selected.current && chess.moves({ square: selected.current, verbose: true }).find((item) => item.to === square);
       if (move) {
         const from = selected.current;
