@@ -1,5 +1,9 @@
 # Senai Vyuham
 
+## License
+
+Senai Vyuham's original code, branding, designs, artwork, and 3D assets are proprietary and all rights are reserved. They may not be copied, reused, redistributed, hosted, or modified without written permission. See [LICENSE](LICENSE). Third-party packages and assets remain under their respective licenses.
+
 Senai Vyuham is an Expo/React Native and web chess app for Android, iOS, and browsers. Its central feature is the Analysis Lab: after a game, select a move, see Stockfish's suggested alternative, play that move in a separate what-if line, and continue against an engine reply or control both sides. The original game is never changed.
 
 ## What works
