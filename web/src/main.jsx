@@ -55,6 +55,45 @@ const capturedBy = (moves, side) => {
 };
 const materialLead = (moves, side) => capturedBy(moves, side).reduce((total, piece) => total + pieceValue[piece.type], 0) - capturedBy(moves, side === 'w' ? 'b' : 'w').reduce((total, piece) => total + pieceValue[piece.type], 0);
 const moveMessage = (move, next) => next.isCheckmate() ? `Checkmate! ${move.color === 'w' ? 'White' : 'Black'} wins.` : next.isCheck() ? `Check! ${next.turn() === 'w' ? 'White' : 'Black'} must respond.` : move.captured ? `Capture! ${move.color === 'w' ? 'White' : 'Black'} captured a ${pieceName[move.captured]}.` : move.promotion ? `Pawn promoted to a ${pieceName[move.promotion]}.` : `${next.turn() === 'w' ? 'White' : 'Black'} to move.`;
+const reviewScore = (items) => Math.max(0, Math.round(100 - items.reduce((sum, item) => sum + item.loss, 0) / Math.max(1, items.length)));
+const reviewQualityCounts = (items) => items.reduce((counts, item) => { counts[item.quality] = (counts[item.quality] || 0) + 1; return counts; }, {});
+const wrapCanvasText = (context, text, x, y, maxWidth, lineHeight) => {
+  const words = String(text).split(/\s+/); let line = ''; let row = 0;
+  words.forEach((word) => { const candidate = line ? `${line} ${word}` : word; if (context.measureText(candidate).width > maxWidth && line) { context.fillText(line, x, y + row * lineHeight); row += 1; line = word; } else line = candidate; });
+  if (line) { context.fillText(line, x, y + row * lineHeight); row += 1; }
+  return row;
+};
+async function createReviewShareImage(items, moves, result) {
+  const notation = moves.map((move, index) => `${index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}${move.san}`).join(' ');
+  const historyRows = Math.max(1, Math.ceil(Math.max(1, notation.length) / 90));
+  const canvas = document.createElement('canvas'); canvas.width = 1200; canvas.height = Math.max(1500, 1080 + historyRows * 27 + 110);
+  const context = canvas.getContext('2d'); if (!context) return null;
+  context.fillStyle = '#101812'; context.fillRect(0, 0, canvas.width, canvas.height);
+  const panel = (x, y, width, height, fill = '#1b2a20') => { context.fillStyle = fill; context.fillRect(x, y, width, height); };
+  const text = (value, x, y, size, color = '#f8f3e9', weight = '600') => { context.font = `${weight} ${size}px Inter, Arial, sans-serif`; context.fillStyle = color; context.fillText(value, x, y); };
+  const white = items.filter((item) => item.ply % 2 === 1); const black = items.filter((item) => item.ply % 2 === 0);
+  const whiteCounts = reviewQualityCounts(white); const blackCounts = reviewQualityCounts(black);
+  text('SENAI VYUHAM', 58, 72, 28, '#b8f36a', '900'); text('GAME REVIEW · EVALUATION', 58, 112, 18, '#9bac9d', '700');
+  text('Player 1 (You)', 58, 174, 24, '#f8f3e9', '800'); text('Player 2 (Opponent)', 650, 174, 24, '#f8f3e9', '800');
+  panel(48, 198, 510, 150, '#17251b'); panel(642, 198, 510, 150, '#17251b');
+  text(`White · ${reviewScore(white)}% accuracy`, 72, 246, 25, '#b8f36a', '900'); text(`Black · ${reviewScore(black)}% accuracy`, 666, 246, 25, '#b8f36a', '900');
+  text(`Best ${whiteCounts.best || 0}   Good ${whiteCounts.good || 0}   Mistake ${whiteCounts.mistake || 0}   Blunder ${whiteCounts.blunder || 0}`, 72, 294, 16, '#c2cec3');
+  text(`Excellent ${whiteCounts.excellent || 0}   Inaccuracy ${whiteCounts.inaccuracy || 0}`, 72, 322, 16, '#c2cec3');
+  text(`Best ${blackCounts.best || 0}   Good ${blackCounts.good || 0}   Mistake ${blackCounts.mistake || 0}   Blunder ${blackCounts.blunder || 0}`, 666, 294, 16, '#c2cec3');
+  text(`Excellent ${blackCounts.excellent || 0}   Inaccuracy ${blackCounts.inaccuracy || 0}`, 666, 322, 16, '#c2cec3');
+  text(result ? `Result · ${result}` : 'Game review', 58, 398, 22, '#f8f3e9', '800'); text('ENGINE EVALUATION', 58, 440, 16, '#9bac9d', '700');
+  panel(48, 460, 1104, 300, '#0c1510');
+  const gx = 82; const gy = 500; const gw = 1036; const gh = 210; context.strokeStyle = '#304335'; context.lineWidth = 1;
+  [0, .5, 1].forEach((fraction) => { const y = gy + gh * fraction; context.beginPath(); context.moveTo(gx, y); context.lineTo(gx + gw, y); context.stroke(); });
+  if (items.length) { context.beginPath(); items.forEach((item, index) => { const x = gx + (items.length === 1 ? gw / 2 : (index / (items.length - 1)) * gw); const y = gy + gh - ((item.actual?.whiteChance ?? 50) / 100) * gh; index ? context.lineTo(x, y) : context.moveTo(x, y); }); context.strokeStyle = '#b8f36a'; context.lineWidth = 5; context.stroke(); items.forEach((item, index) => { const x = gx + (items.length === 1 ? gw / 2 : (index / (items.length - 1)) * gw); const y = gy + gh - ((item.actual?.whiteChance ?? 50) / 100) * gh; context.fillStyle = item.quality === 'blunder' ? '#ed7570' : item.quality === 'mistake' ? '#f09a58' : item.quality === 'inaccuracy' ? '#e6c25c' : '#f8f3e9'; context.beginPath(); context.arc(x, y, 7, 0, Math.PI * 2); context.fill(); }); }
+  text('White advantage', gx, 742, 14, '#9bac9d'); text('Black advantage', gx + gw - 130, 742, 14, '#9bac9d');
+  text('KEY MOMENTS', 58, 806, 16, '#b8f36a', '900'); const turning = items.filter((item) => ['inaccuracy', 'mistake', 'blunder'].includes(item.quality)).slice(0, 5); let y = 842;
+  if (!turning.length) { text('No major mistakes detected.', 58, y, 18, '#c2cec3'); y += 34; } else turning.forEach((item) => { text(`${Math.ceil(item.ply / 2)}${item.ply % 2 ? '.' : '…'} ${item.san} · ${qualityLabel[item.quality]}`, 58, y, 18, item.quality === 'blunder' ? '#ed7570' : item.quality === 'mistake' ? '#f09a58' : '#e6c25c', '700'); y += 30; });
+  text('MOVE HISTORY · PGN', 58, 1010, 16, '#b8f36a', '900'); text('COPY PGN', 1018, 1010, 14, '#b8f36a', '900');
+  context.fillStyle = '#c2cec3'; context.font = '500 17px ui-monospace, Consolas, monospace'; wrapCanvasText(context, notation || 'No moves recorded.', 58, 1050, 1050, 27);
+  text('Shared from Senai Vyuham · Understand every move.', 58, canvas.height - 60, 16, '#9bac9d');
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/png', .92));
+}
 function playEventTone(move, next) {
   if (read('linechess-sound', 'on') === 'off') return;
   const kind = next.isCheckmate() ? 'mate' : next.isCheck() ? 'check' : move.captured || move.flags?.includes('c') || move.flags?.includes('e') ? 'capture' : 'move';
@@ -85,7 +124,7 @@ function App() {
   const [status, setStatus] = useState('active'); const [result, setResult] = useState(''); const [timed, setTimed] = useState(600); const [clocks, setClocks] = useState({ w: 600, b: 600 }); const [clockStarted, setClockStarted] = useState(false);
   const [server, setServer] = useState(initialServer); const [name, setName] = useState(read('linechess-name')); const [connected, setConnected] = useState(false);
   const [gameId, setGameId] = useState(null); const [playerColor, setPlayerColor] = useState('w'); const [joinCode, setJoinCode] = useState(''); const [notice, setNotice] = useState('White to move');
-  const [analysis, setAnalysis] = useState(null); const [thinking, setThinking] = useState(false); const [review, setReview] = useState(null); const [reviewLoading, setReviewLoading] = useState(false); const [analysisError, setAnalysisError] = useState(''); const [study, setStudy] = useState(null); const [promotion, setPromotion] = useState(null); const [threeOpen, setThreeOpen] = useState(true);
+  const [analysis, setAnalysis] = useState(null); const [thinking, setThinking] = useState(false); const [review, setReview] = useState(null); const [reviewLoading, setReviewLoading] = useState(false); const [analysisError, setAnalysisError] = useState(''); const [study, setStudy] = useState(null); const [promotion, setPromotion] = useState(null); const [pgnOpen, setPgnOpen] = useState(false); const [pgnDraft, setPgnDraft] = useState(''); const [pgnLoading, setPgnLoading] = useState(false); const [toast, setToast] = useState(''); const [threeOpen, setThreeOpen] = useState(true);
   const [boardSkin, setBoardSkin] = useState(() => read('linechess-board-skin', 'classic')); const [pieceSkin, setPieceSkin] = useState(() => read('linechess-piece-skin', 'classic'));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quality, setQuality] = useState(initialGraphicsQuality);
@@ -100,6 +139,11 @@ function App() {
   const game = useMemo(() => new Chess(boardFen), [boardFen]); const legal = selected ? game.moves({ square: selected, verbose: true }) : [];
   const reviewItems = review?.items ?? []; const boardStatus = study ? 'active' : status;
   const boardEvent = /^(Checkmate|Check!|Capture!|Time expired)/.test(notice) ? notice.split('. ')[0] : ''; const compactBoardEvent = /^Capture!/.test(notice);
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timer = window.setTimeout(() => setToast(''), 2600);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   const reset = (nextTimed = timed, nextMode = 'local') => {
     if (formationTimer.current) window.clearTimeout(formationTimer.current); formationTimer.current = null; setFormationActive(false);
@@ -250,13 +294,43 @@ function App() {
   };
   const shareAnalysis = async () => {
     if (review?.status !== 'complete') return;
+    const white = review.items.filter((item) => item.ply % 2 === 1);
+    const black = review.items.filter((item) => item.ply % 2 === 0);
     const turning = review.items.filter((item) => ['inaccuracy', 'mistake', 'blunder'].includes(item.quality)).slice(0, 6);
-    const score = (side) => Math.max(0, Math.round(100 - side.reduce((sum, item) => sum + item.loss, 0) / Math.max(1, side.length)));
-    const message = `Senai Vyuham · Game review\nWhite ${score(review.items.filter((item) => item.ply % 2))}% · Black ${score(review.items.filter((item) => !(item.ply % 2)))}% accuracy\n${turning.length ? `Key moments: ${turning.map((item) => `${Math.ceil(item.ply / 2)}${item.ply % 2 ? '.' : '…'} ${item.san} (${qualityLabel[item.quality]})`).join(', ')}` : 'No major mistakes detected.'}\n\nPGN: ${makePgn(moves)}`;
+    const message = `Senai Vyuham · Game review\nPlayer 1 (You) · White ${reviewScore(white)}% accuracy\nPlayer 2 (Opponent) · Black ${reviewScore(black)}% accuracy\n${turning.length ? `Key moments: ${turning.map((item) => `${Math.ceil(item.ply / 2)}${item.ply % 2 ? '.' : '…'} ${item.san} (${qualityLabel[item.quality]})`).join(', ')}` : 'No major mistakes detected.'}\n\nPGN:\n${makePgn(moves)}`;
     try {
-      if (navigator.share) await navigator.share({ title: 'Senai Vyuham game review', text: message });
-      else { await navigator.clipboard.writeText(message); setNotice('Game analysis copied to clipboard.'); }
+      const imageBlob = await createReviewShareImage(review.items, moves, result);
+      const file = imageBlob ? new File([imageBlob], 'senai-vyuham-game-review.png', { type: 'image/png' }) : null;
+      if (navigator.share && file && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ title: 'Senai Vyuham game review', text: message, files: [file] });
+        setNotice('Review card shared with the PGN.');
+      } else if (navigator.share) {
+        await navigator.share({ title: 'Senai Vyuham game review', text: message });
+      } else {
+        await navigator.clipboard.writeText(message);
+        setNotice('Game analysis copied to clipboard. Use Copy PGN for the move record.');
+      }
     } catch (error) { if (error.name !== 'AbortError') setNotice('Could not share the review on this device.'); }
+  };
+  const copyCurrentPgn = async () => {
+    const pgn = makePgn(moves);
+    if (!pgn) return setNotice('Play at least one move before copying PGN.');
+    try { await navigator.clipboard.writeText(pgn); setNotice('Current game PGN copied to clipboard.'); setToast('PGN copied ✓'); }
+    catch { setPgnDraft(pgn); setPgnOpen(true); setNotice('Clipboard access was blocked. Copy the PGN from the text box.'); }
+  };
+  const loadPgn = async () => {
+    const source = pgnDraft.trim();
+    if (!source) return setNotice('Paste a PGN first.');
+    setPgnLoading(true);
+    await new Promise((resolve) => window.setTimeout(resolve, 80));
+    try {
+      const replay = new Chess(); replay.loadPgn(source);
+      const loadedMoves = replay.history({ verbose: true });
+      if (!loadedMoves.length) throw new Error('No moves found');
+      setMode('local'); setFen(replay.fen()); setMoves(loadedMoves); setLastMove(loadedMoves.at(-1) ?? null); setStatus(replay.isGameOver() ? 'finished' : 'active'); setResult(replay.isCheckmate() ? (replay.turn() === 'w' ? '0-1' : '1-0') : replay.isDraw() ? '½-½' : ''); setStudy(null); setReview(null); setAnalysis(null); setSelected(null); setPgnOpen(false); setNotice(`Loaded ${loadedMoves.length} moves from PGN.`);
+      setToast('PGN loaded ✓');
+    } catch { setNotice('That PGN could not be loaded. Check the move notation and try again.'); setToast('Could not load PGN'); }
+    finally { setPgnLoading(false); }
   };
   const supportDeveloper = () => {
     if (donationUrl) {
@@ -266,11 +340,35 @@ function App() {
     setNotice('Thank you for supporting Senai Vyuham ❤️');
   };
   const openStudy = (item) => { const pastMoves = moves.slice(0, item.ply - 1); setStudy({ fen: item.before, moves: pastMoves, sourcePly: item.ply }); setSelected(null); setLastMove(pastMoves.at(-1) ?? null); setNotice(`${qualityLabel[item.quality]} on ${item.san}. Try another continuation from this position.`); };
+  const showPly = (ply) => {
+    const visibleMoves = moves.slice(0, Math.max(0, Math.min(moves.length, ply)));
+    const replay = new Chess();
+    visibleMoves.forEach((move) => { try { replay.move({ from: move.from, to: move.to, promotion: move.promotion || 'q' }); } catch {} });
+    setStudy({ fen: replay.fen(), moves: visibleMoves, sourcePly: visibleMoves.length });
+    setSelected(null); setLastMove(visibleMoves.at(-1) ?? null);
+    setNotice(visibleMoves.length ? `Viewing move ${visibleMoves.length} of ${moves.length}.` : 'Starting position.');
+  };
+  const clearBoardView = () => { setSelected(null); setAnalysis(null); setStudy(null); setLastMove(moves.at(-1) ?? null); setNotice('Board view cleared.'); };
+  const stepStudy = (delta) => {
+    if (!study || !reviewItems.length) return;
+    const currentIndex = reviewItems.findIndex((item) => item.ply === study.sourcePly);
+    const next = reviewItems[currentIndex + delta];
+    if (next) openStudy(next);
+  };
   const leaveStudy = () => { setStudy(null); setSelected(null); setLastMove(moves.at(-1) ?? null); setNotice('Returned to the real game position.'); };
   const order = orientation === 'w' ? { ranks: [8, 7, 6, 5, 4, 3, 2, 1], columns: [...files] } : { ranks: [1, 2, 3, 4, 5, 6, 7, 8], columns: [...files].reverse() };
   const topSide = orientation === 'w' ? 'b' : 'w'; const bottomSide = orientation;
   const playerName = (side) => mode === 'online' && playerColor === side ? `You · ${side === 'w' ? 'White' : 'Black'}` : side === 'w' ? 'White' : 'Black';
-  const best = analysis?.lines?.[0];
+  const selectedReview = study ? reviewItems.find((item) => item.ply === study.sourcePly) : null;
+  const best = study ? selectedReview?.best?.[0] ?? analysis?.lines?.[0] : analysis?.lines?.[0];
+  const engineArrow = best?.pv?.[0] ? { from: best.pv[0].slice(0, 2), to: best.pv[0].slice(2, 4) } : null;
+  const squarePoint = (square) => {
+    const fileIndex = orientation === 'w' ? files.indexOf(square[0]) : 7 - files.indexOf(square[0]);
+    const rankIndex = orientation === 'w' ? 8 - Number(square[1]) : Number(square[1]) - 1;
+    return { x: (fileIndex + .5) * 12.5, y: (rankIndex + .5) * 12.5 };
+  };
+  const arrowStart = engineArrow ? squarePoint(engineArrow.from) : null;
+  const arrowEnd = engineArrow ? squarePoint(engineArrow.to) : null;
   const reviewProgress = review?.total ? Math.min(100, Math.round((review.completed / review.total) * 100)) : 0;
   const checkmateKingSquare = game.isCheckmate() ? files.split('').flatMap((file) => order.ranks.map((rank) => `${file}${rank}`)).find((square) => { const piece = game.get(square); return piece?.type === 'k' && piece.color === game.turn(); }) : null;
   const cagePosition = checkmateKingSquare ? { col: order.columns.indexOf(checkmateKingSquare[0]), row: order.ranks.indexOf(Number(checkmateKingSquare[1])) } : null;
@@ -295,9 +393,9 @@ function App() {
       <section className="game-area">
         {result && <div className="game-result" role="status">RESULT · {result}</div>}
         <Player color={topSide} name={playerName(topSide)} time={formatClock(clocks[topSide], timed)} seconds={clocks[topSide]} active={game.turn() === topSide && status === 'active'} />
-        <div className={`board ${study ? 'study-board' : ''}`} role="grid" aria-label="Chess board">{order.ranks.flatMap((rank, row) => order.columns.map((file, col) => { const square = `${file}${rank}`; const piece = game.get(square); const target = legal.find((move) => move.to === square); const moved = lastMove?.to === square; return <button key={square} className={`square ${(row + col) % 2 ? 'dark' : 'light'} ${selected === square ? 'selected' : ''} ${lastMove?.from === square || moved ? 'last' : ''} ${target ? piece ? 'capture' : 'legal' : ''}`} onClick={() => clickSquare(square)} aria-label={square}><span className="rank">{col === 0 ? rank : ''}</span>{piece && <span className={`piece ${piece.color} ${moved ? 'arrive' : ''}`}>{glyph[piece.color][piece.type]}</span>}<span className="file">{row === 7 ? file : ''}</span></button>; }))}{game.isCheckmate() && cagePosition && <div className="checkmate-cage" style={{ left: `${cagePosition.col * 12.5}%`, top: `${cagePosition.row * 12.5}%` }} aria-label="Checkmate: king arrested"><span className="cage-dome"/><span className="cage-chain">✦</span><span className="cage-king">♔</span></div>}{status === 'finished' && !game.isCheckmate() && <div className="draw-handshake" aria-label="Draw agreed"><span className="draw-king">♔</span><i className="handshake-glyph" aria-hidden="true"/><span className="draw-king">♚</span></div>}{status === 'finished' && game.isCheckmate() && <div className="victory-flourish" aria-label="Victory celebration">✦ ✿ ✦</div>}</div>
+        <div className={`board ${study ? 'study-board' : ''}`} role="grid" aria-label="Chess board">{order.ranks.flatMap((rank, row) => order.columns.map((file, col) => { const square = `${file}${rank}`; const piece = game.get(square); const target = legal.find((move) => move.to === square); const moved = lastMove?.to === square; return <button key={square} className={`square ${(row + col) % 2 ? 'dark' : 'light'} ${selected === square ? 'selected' : ''} ${lastMove?.from === square || moved ? 'last' : ''} ${target ? piece ? 'capture' : 'legal' : ''}`} onClick={() => clickSquare(square)} aria-label={square}><span className="rank">{col === 0 ? rank : ''}</span>{piece && <span className={`piece ${piece.color} ${moved ? 'arrive' : ''}`}>{glyph[piece.color][piece.type]}</span>}<span className="file">{row === 7 ? file : ''}</span></button>; }))}{engineArrow && arrowStart && arrowEnd && <svg className="engine-arrow-layer" viewBox="0 0 100 100" aria-label={`Engine recommendation ${engineArrow.from} to ${engineArrow.to}`} role="img"><defs><marker id="engine-arrow-head" markerUnits="userSpaceOnUse" markerWidth="4" markerHeight="4" refX="3.2" refY="2" orient="auto"><path d="M0,0 L4,2 L0,4 z" /></marker></defs><line x1={arrowStart.x} y1={arrowStart.y} x2={arrowEnd.x} y2={arrowEnd.y} markerEnd="url(#engine-arrow-head)" /></svg>}{game.isCheckmate() && cagePosition && <div className="checkmate-cage" style={{ left: `${cagePosition.col * 12.5}%`, top: `${cagePosition.row * 12.5}%` }} aria-label="Checkmate: king arrested"><span className="cage-dome"/><span className="cage-chain">✦</span><span className="cage-king">♔</span></div>}{status === 'finished' && !game.isCheckmate() && <div className="draw-handshake" aria-label="Draw agreed"><span className="draw-king">♔</span><i className="handshake-glyph" aria-hidden="true"/><span className="draw-king">♚</span></div>}{status === 'finished' && game.isCheckmate() && <div className="victory-flourish" aria-label="Victory celebration">✦ ✿ ✦</div>}</div>
         <Player color={bottomSide} name={playerName(bottomSide)} time={formatClock(clocks[bottomSide], timed)} seconds={clocks[bottomSide]} active={game.turn() === bottomSide && status === 'active'} />
-        <p className="notice" aria-live="polite">{notice}</p>{study && <div className="study-banner"><span>WHAT-IF LINE · move {study.sourcePly}</span><button onClick={leaveStudy}>Return to game</button></div>}
+        <p className="notice" aria-live="polite">{notice}</p><div className="board-navigation" aria-label="Board navigation"><button onClick={clearBoardView}>Clear</button><button onClick={() => reset(timed, mode)}>Reset</button><button onClick={() => showPly(study ? study.sourcePly - 1 : moves.length - 1)} disabled={!moves.length || (study?.sourcePly ?? moves.length) <= 0}>← Back</button><button onClick={() => showPly(study ? study.sourcePly + 1 : moves.length)} disabled={!study || study.sourcePly >= moves.length}>Front →</button></div>{study && <div className="study-banner"><span>WHAT-IF LINE · move {study.sourcePly}</span><div className="study-controls"><button onClick={() => stepStudy(-1)} disabled={!reviewItems.some((item) => item.ply < study.sourcePly)} aria-label="Previous analysed move">← Previous</button><button onClick={() => stepStudy(1)} disabled={!reviewItems.some((item) => item.ply > study.sourcePly)} aria-label="Next analysed move">Next →</button><button onClick={leaveStudy}>Return to game</button></div></div>}
         <div className="board-actions"><button onClick={() => setOrientation(orientation === 'w' ? 'b' : 'w')}>Flip board</button>{status === 'finished' && mode === 'local' ? <button className="primary" onClick={playAgain}>Play again</button> : <><button className="danger" onClick={() => { if (mode === 'online' && gameId && !study) socket.current?.emit('game:resign', { gameId }); else if (!study) { setStatus('finished'); setResult(game.turn() === 'w' ? '0-1' : '1-0'); setNotice('You resigned.'); } }}>Resign</button><button onClick={offerDraw} disabled={status !== 'active' || Boolean(study) || formationActive}>Offer draw</button></>}</div>
       </section>
       <aside className="card analysis">
@@ -308,9 +406,9 @@ function App() {
         {best && <div className="engine-result"><div className="score">{best.whiteScore?.mate != null ? `M${best.whiteScore.mate}` : `${best.whiteScore?.cp >= 0 ? '+' : ''}${((best.whiteScore?.cp ?? 0) / 100).toFixed(2)}`}</div><span>White win chance: {best.whiteChance}%</span><p><b>Best continuation</b><br />{best.san?.join('  ')}</p></div>}
         {reviewLoading && <div className="analysis-progress"><div className="analysis-progress-head"><strong>Reviewing moves</strong><span>{reviewProgress}%</span></div><div className="progress-track"><i style={{ width: `${Math.max(4, reviewProgress)}%` }} /></div><small>Stockfish is evaluating each position. You can keep this page open.</small></div>}
         {review?.status === 'complete' && <><ChartGameReview items={reviewItems} onOpen={openStudy} /><button className="secondary share-review" onClick={shareAnalysis}>Share game analysis</button></>}
-        <div className="history"><p className="label">MOVE HISTORY</p>{moves.length ? <div className="moves">{moves.map((move, index) => <button key={`${move.san}-${index}`} data-side={index % 2 === 0 ? 'white' : 'black'} aria-label={`${index % 2 === 0 ? 'White' : 'Black'} move ${move.san}`} className={reviewItems[index] ? qualityClass(reviewItems[index].quality) : ''} onClick={() => reviewItems[index] && openStudy(reviewItems[index])}>{index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}{move.san}</button>)}</div> : <p className="subtle">Your moves will appear here.</p>}</div>
+        <div className="history"><div className="history-heading"><p className="label">MOVE HISTORY</p><div className="pgn-actions"><button onClick={copyCurrentPgn} disabled={!moves.length}>Copy PGN</button><button onClick={() => { setPgnDraft(''); setPgnOpen(true); }}>Paste PGN</button></div></div>{moves.length ? <div className="moves">{moves.map((move, index) => <button key={`${move.san}-${index}`} data-side={index % 2 === 0 ? 'white' : 'black'} aria-label={`${index % 2 === 0 ? 'White' : 'Black'} move ${move.san}`} className={reviewItems[index] ? qualityClass(reviewItems[index].quality) : ''} onClick={() => reviewItems[index] && openStudy(reviewItems[index])}>{index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}{move.san}</button>)}</div> : <p className="subtle">Your moves will appear here.</p>}</div>
       </aside><DeferredThreeBoard open={threeOpen} onOpenChange={setThreeOpen} fen={boardFen} moves={boardMoves} lastMove={lastMove} status={boardStatus} result={result} orientation={orientation} onMove={play} onPromote={(from, to, color) => setPromotion({ from, to, color })} quality={quality} coordinates={coordinates} sound={sound} view={cameraView} characterSet={characterSet} formationKey={formationKey} formationActive={formationActive}/>
-    </section>{boardEvent && <div className={`board-event ${compactBoardEvent ? 'compact' : ''}`} key={notice}>{compactBoardEvent ? boardEvent.replace(/^Capture!\s*/, '').replace(/\.$/, '') : boardEvent}</div>}{promotion && <PromotionPicker color={promotion.color} onChoose={(type) => { play(promotion.from, promotion.to, type); setPromotion(null); }} onCancel={() => setPromotion(null)} />}<footer className="site-footer"><span>© {new Date().getFullYear()} · Developed by <a href={developerProfileUrl} target="_blank" rel="noreferrer">Master Dhaneshvar Maha</a> · Built with love</span><button className="donate-link" type="button" onClick={supportDeveloper} aria-label="Donate to support development">♥ Donate</button></footer>
+    </section>{boardEvent && <div className={`board-event ${compactBoardEvent ? 'compact' : ''}`} key={notice}>{compactBoardEvent ? boardEvent.replace(/^Capture!\s*/, '').replace(/\.$/, '') : boardEvent}</div>}{promotion && <PromotionPicker color={promotion.color} onChoose={(type) => { play(promotion.from, promotion.to, type); setPromotion(null); }} onCancel={() => setPromotion(null)} />}{pgnOpen && <div className="pgn-modal" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !pgnLoading) setPgnOpen(false); }}><section className="pgn-dialog" role="dialog" aria-modal="true" aria-labelledby="pgn-dialog-title" aria-busy={pgnLoading}><div className="pgn-dialog-heading"><div><p className="label">PGN TOOLS</p><h2 id="pgn-dialog-title">Copy or paste a game</h2></div><button onClick={() => setPgnOpen(false)} aria-label="Close PGN dialog" disabled={pgnLoading}>×</button></div><textarea value={pgnDraft} onChange={(event) => setPgnDraft(event.target.value)} placeholder="Paste PGN here…" aria-label="PGN text" disabled={pgnLoading}/><div className="pgn-dialog-actions"><button className="secondary" onClick={() => setPgnOpen(false)} disabled={pgnLoading}>Cancel</button><button className="primary" onClick={loadPgn} disabled={pgnLoading}>{pgnLoading && <span className="pgn-loading-spinner" aria-hidden="true"/>}{pgnLoading ? 'Loading PGN…' : 'Load PGN'}</button></div></section></div>}{toast && <div className="app-toast" role="status" aria-live="polite">{toast}</div>}<footer className="site-footer"><span>© {new Date().getFullYear()} · Developed by <a href={developerProfileUrl} target="_blank" rel="noreferrer">Master Dhaneshvar Maha</a> · Built with love</span><button className="donate-link" type="button" onClick={supportDeveloper} aria-label="Donate to support development">♥ Donate</button></footer>
   </main></CaptureContext.Provider>;
 }
 function DeferredThreeBoard(props) {

@@ -489,7 +489,10 @@ export function WebThreeBoard({ fen, moves = [], lastMove = null, status = 'acti
           root.userData.moveStartedAt = performance.now(); root.userData.spawnedAt = performance.now() - 400;
           playRigAction(root, 'walk');
         }
-        if (captured) playRigAction(root, 'death');
+        // Captured pieces are displayed as an upright memorial/collection outside
+        // the board. The combat victim still plays its death clip during capture,
+        // but the settled off-board character must return to an idle stance.
+        if (captured) { root.rotation.z = 0; playRigAction(root, 'idle'); }
         decorateCharacter(root, piece, captured);
         parent.add(root);
         if (!importedCharacterStyles.has(style) || quality === 'low') return root;
