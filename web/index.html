@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101512" />
+    <meta name="description" content="Play live, see the battle in 3D, and improve with AI insight—learning from every decision in Senai Vyuham." />
+    <meta name="author" content="Master Dhaneshvar Maha" />
+    <meta name="keywords" content="chess AI, 3D chess, online chess, chess analysis, Stockfish, animated chess, game review" />
+    <meta property="og:title" content="Senai Vyuham — Play closer to the board. Understand every move." />
+    <meta property="og:description" content="Play live, see the battle in 3D, and improve with AI insight—learning from every decision. Developed by Master Dhaneshvar Maha." />
+    <meta property="og:site_name" content="Senai Vyuham" />
+    <meta name="twitter:title" content="Senai Vyuham — Play closer to the board. Understand every move." />
+    <meta name="twitter:description" content="Play live, see the battle in 3D, and improve with AI insight—learning from every decision. Developed by Master Dhaneshvar Maha." />
+    <meta property="og:image" content="/vyuha-chess-ai-logo.png" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="icon" type="image/png" href="/vyuha-chess-ai-logo.png" />
+    <link rel="apple-touch-icon" href="/vyuha-chess-ai-logo.png" />
+    <title>Senai Vyuham — Play closer to the board. Understand every move.</title>
+    <style>
+      #startup-loader { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; background: radial-gradient(circle at 50% 40%, #1d3324, #101512 68%); color: #f8f3e9; opacity: 0; visibility: hidden; pointer-events: none; animation: reveal-loader .16s ease 700ms forwards; }
+      #startup-loader > div { display: grid; justify-items: center; gap: 12px; text-align: center; }
+      #startup-loader img { width: 82px; height: 82px; object-fit: contain; filter: drop-shadow(0 6px 18px rgba(184,243,106,.3)); animation: crest-pulse 1.15s ease-in-out infinite alternate; }
+      #startup-loader strong { font: 900 16px Georgia, serif; letter-spacing: 2px; }
+      #startup-loader span { color: #c8d8c9; font: 12px system-ui, sans-serif; }
+      #startup-loader i { width: 132px; height: 3px; overflow: hidden; border-radius: 99px; background: #2c4431; }
+      #startup-loader i::after { content: ''; display: block; width: 45%; height: 100%; border-radius: inherit; background: #b8f36a; animation: loader-sweep .9s ease-in-out infinite; }
+      .app-ready #startup-loader { opacity: 0; visibility: hidden; animation: none; transition: opacity .16s ease, visibility 0s linear .16s; }
+      @keyframes reveal-loader { to { opacity: 1; visibility: visible; } }
+      @keyframes crest-pulse { to { transform: translateY(-3px) scale(1.04); } }
+      @keyframes loader-sweep { from { transform: translateX(-120%); } to { transform: translateX(270%); } }
+      @media (prefers-reduced-motion: reduce) { #startup-loader, #startup-loader img, #startup-loader i::after { animation: none; } }
+    </style>
+  </head>
+  <body>
+    <div id="startup-loader" role="status" aria-live="polite"><div><img src="/vyuha-chess-ai-logo.webp" width="82" height="82" alt="Senai Vyuham logo" title="Senai Vyuham" /><strong>SENAI VYUHAM</strong><span>Preparing your board…</span><i aria-hidden="true"></i></div></div>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

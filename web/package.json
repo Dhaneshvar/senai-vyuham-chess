@@ -1,0 +1,23 @@
+{
+  "name": "senai-vyuham-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "chart.js": "^4.6.1",
+    "chess.js": "^1.4.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "socket.io-client": "^4.8.4",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest"
+  }
+}

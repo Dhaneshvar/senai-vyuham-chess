@@ -1,25 +1,57 @@
 {
   "expo": {
-    "name": "chess",
-    "slug": "chess",
+    "name": "Senai Vyuham",
+    "slug": "senai-vyuham",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "icon": "./assets/vyuha-chess-ai-logo.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "senai-vyuham",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.senaivyuham.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "The immersive chess view shows a board over your camera feed."
+      }
     },
     "android": {
+      "package": "com.senaivyuham.app",
+      "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#101512",
+        "foregroundImage": "./assets/vyuha-chess-ai-logo.png"
       },
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
-    }
+      "favicon": "./assets/vyuha-chess-ai-logo.png"
+    },
+    "experiments": {
+      "typedRoutes": true
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/vyuha-chess-ai-logo.png",
+          "imageWidth": 180,
+          "backgroundColor": "#101512",
+          "dark": { "backgroundColor": "#101512" }
+        }
+      ],
+      "expo-sqlite",
+      "expo-audio",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Senai Vyuham to show the chessboard over your camera view."
+        }
+      ],
+      "expo-asset"
+    ]
   }
 }
