@@ -1,4 +1,4 @@
-# LineChess server
+# Senai Vyuham server
 
 Run `npm install` and `npm start`. Default port: 3001. Set `PORT` for hosting; set `DATABASE_URL` for PostgreSQL persistence. `GET /health` reports storage and analysis queue status.
 

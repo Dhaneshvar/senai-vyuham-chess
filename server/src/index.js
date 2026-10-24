@@ -217,5 +217,5 @@ setInterval(() => {
 const port = Number(process.env.PORT || 3001);
 initializeStore().then((saved) => {
   for (const game of saved) games.set(game.id, game);
-  httpServer.listen(port, '0.0.0.0', () => console.log(`LineChess server listening on :${port} (${storageMode()})`));
+  httpServer.listen(port, '0.0.0.0', () => console.log(`Senai Vyuham server listening on :${port} (${storageMode()})`));
 }).catch((error) => { console.error('Could not initialize game storage:', error); process.exitCode = 1; });
