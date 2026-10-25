@@ -169,8 +169,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visi
 /* Engine recommendations remain visible while exploring a review position. */
 .board{position:relative}
 .engine-arrow-layer{position:absolute;inset:0;width:100%;height:100%;z-index:4;pointer-events:none;overflow:visible}
-.engine-arrow-layer line{stroke:#b8f36a;stroke-width:1.15;stroke-linecap:round;filter:drop-shadow(0 0 2px #142718);opacity:.9}
-.engine-arrow-layer marker path{fill:#b8f36a}
+.engine-arrow-layer line{stroke:#b8f36a;stroke-width:1.05;stroke-linecap:round;filter:drop-shadow(0 0 2px #142718);opacity:.92}
+.engine-arrow-layer .arrow-best{stroke:#7dff6a}.engine-arrow-layer .arrow-brilliant{stroke:#62b7ff}.engine-arrow-layer .arrow-playable{stroke:#f3a64f}.engine-arrow-layer .arrow-wrong{stroke:#f06b68;stroke-dasharray:1.5 1}
+.engine-arrow-layer marker path{fill:#b8f36a}.engine-arrow-layer marker .arrow-best{fill:#7dff6a}.engine-arrow-layer marker .arrow-brilliant{fill:#62b7ff}.engine-arrow-layer marker .arrow-playable{fill:#f3a64f}.engine-arrow-layer marker .arrow-wrong{fill:#f06b68}
+.arrow-legend{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:4px auto 0;color:#9bac9d;font-size:10px}.arrow-legend span{display:inline-flex;align-items:center;gap:4px}.arrow-legend i{width:8px;height:8px;border-radius:50%;background:#7dff6a}.arrow-legend .blue{background:#62b7ff}.arrow-legend .orange{background:#f3a64f}.arrow-legend .red{background:#f06b68}
+.engine-lines{display:grid;gap:5px;margin-top:10px}.engine-line{display:grid;grid-template-columns:max-content 1fr;gap:7px;align-items:center;padding:6px 8px;border-left:3px solid #7dff6a;border-radius:6px;background:#16231a;font-size:10px}.engine-line b{font-size:9px;text-transform:uppercase;letter-spacing:.4px}.engine-line span{color:#dbe7db;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.engine-line-brilliant{border-left-color:#62b7ff}.engine-line-brilliant b{color:#62b7ff}.engine-line-playable{border-left-color:#f3a64f}.engine-line-playable b{color:#f3a64f}.engine-line-best b{color:#7dff6a}
 .study-banner{gap:10px}
 .study-controls{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}
 .study-banner button:disabled{opacity:.4;cursor:not-allowed}

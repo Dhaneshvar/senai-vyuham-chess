@@ -77,7 +77,7 @@ export class EngineQueue {
           const whiteScore = chess.turn() === 'w' ? variant.score : { cp: variant.score.cp == null ? undefined : -variant.score.cp, mate: variant.score.mate == null ? undefined : -variant.score.mate };
           return { ...variant, san, whiteScore, whiteChance: scoreToChance(whiteScore) };
         });
-        resolve({ fen, depth: Math.max(...ordered.map((v) => v.depth), 0), engine: 'Stockfish 19 lite', lines: ordered });
+        resolve({ fen, depth: Math.max(...ordered.map((v) => v.depth), 0), engine: 'Senai Vyuham Intelligent Engine', lines: ordered });
       };
       const timeout = setTimeout(() => finish(new Error('Engine timed out')), 15000);
       child.on('error', finish);
