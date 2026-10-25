@@ -48,6 +48,7 @@ const makePgn = (moves, result = '*') => {
     return chess.pgn();
   } catch { return ''; }
 };
+const makeMoveRecord = (moves) => moves.map((move, index) => `${index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}${move.san}`).join(' ');
 const qualityLabel = { best: 'Best', excellent: 'Excellent', good: 'Good', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder' };
 const qualityClass = (quality) => `quality-${quality || 'good'}`;
 const CaptureContext = createContext([]);
@@ -137,13 +138,13 @@ function playClockTick(urgent) {
 }
 
 function App() {
-  const socket = useRef(null); const reviewPoll = useRef(null); const formationTimer = useRef(null); const dragStart = useRef(null); const ignoreClick = useRef(false); const musicPlayer = useRef(null); const lastClockTick = useRef('');
+  const socket = useRef(null); const reviewPoll = useRef(null); const analysisRequestId = useRef(0); const formationTimer = useRef(null); const dragStart = useRef(null); const ignoreClick = useRef(false); const musicPlayer = useRef(null); const lastClockTick = useRef('');
   const [fen, setFen] = useState(freshFen); const [moves, setMoves] = useState([]);
   const [mode, setMode] = useState(initialRoomCode ? 'online' : 'local'); const [selected, setSelected] = useState(null); const [orientation, setOrientation] = useState('w'); const [lastMove, setLastMove] = useState(null);
   const [status, setStatus] = useState('active'); const [result, setResult] = useState(''); const [timed, setTimed] = useState(600); const [clocks, setClocks] = useState({ w: 600, b: 600 }); const [clockStarted, setClockStarted] = useState(false);
   const [server, setServer] = useState(initialServer); const [name, setName] = useState(read('linechess-name')); const [connected, setConnected] = useState(false);
   const [gameId, setGameId] = useState(null); const [playerColor, setPlayerColor] = useState('w'); const [joinCode, setJoinCode] = useState(initialRoomCode); const [notice, setNotice] = useState(initialRoomCode ? `Room invite ready - enter your name and join ${initialRoomCode}.` : 'White to move');
-  const [analysis, setAnalysis] = useState(null); const [thinking, setThinking] = useState(false); const [review, setReview] = useState(null); const [reviewLoading, setReviewLoading] = useState(false); const [analysisError, setAnalysisError] = useState(''); const [study, setStudy] = useState(null); const [promotion, setPromotion] = useState(null); const [pgnOpen, setPgnOpen] = useState(false); const [pgnDraft, setPgnDraft] = useState(''); const [pgnLoading, setPgnLoading] = useState(false); const [sharePreparing, setSharePreparing] = useState(false); const [showAlternatives, setShowAlternatives] = useState(false); const [toast, setToast] = useState(''); const [threeOpen, setThreeOpen] = useState(true);
+  const [analysis, setAnalysis] = useState(null); const [thinking, setThinking] = useState(false); const [practiceMode, setPracticeMode] = useState(false); const [review, setReview] = useState(null); const [reviewLoading, setReviewLoading] = useState(false); const [analysisError, setAnalysisError] = useState(''); const [study, setStudy] = useState(null); const [promotion, setPromotion] = useState(null); const [pgnOpen, setPgnOpen] = useState(false); const [pgnDraft, setPgnDraft] = useState(''); const [pgnLoading, setPgnLoading] = useState(false); const [sharePreparing, setSharePreparing] = useState(false); const [showAlternatives, setShowAlternatives] = useState(false); const [toast, setToast] = useState(''); const [threeOpen, setThreeOpen] = useState(true);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [boardSkin, setBoardSkin] = useState(() => read('linechess-board-skin', 'classic')); const [pieceSkin, setPieceSkin] = useState(() => read('linechess-piece-skin', 'classic'));
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -180,7 +181,7 @@ function App() {
   const reset = (nextTimed = timed, nextMode = 'local') => {
     if (formationTimer.current) window.clearTimeout(formationTimer.current); formationTimer.current = null; setFormationActive(false);
     const online = nextMode === 'online'; setFen(freshFen); setMoves([]); setLastMove(null); setSelected(null); setStatus(online ? 'waiting' : 'active'); setResult(''); setClockStarted(false);
-    setAnalysis(null); setReview(null); setStudy(null); setPromotion(null); setTimed(nextTimed); setClocks({ w: nextTimed, b: nextTimed }); setMode(nextMode); setGameId(null);
+    analysisRequestId.current += 1; setAnalysis(null); setPracticeMode(false); setReview(null); setStudy(null); setPromotion(null); setTimed(nextTimed); setClocks({ w: nextTimed, b: nextTimed }); setMode(nextMode); setGameId(null);
     setNotice(online ? 'Connect, then create a room or join a room code.' : 'White to move');
   };
   const playAgain = () => {
@@ -189,15 +190,16 @@ function App() {
   };
   const sync = (wire) => {
     const liveMoves = wire.history ?? []; setFen(wire.fen); setMoves(liveMoves); setLastMove(liveMoves.at(-1) ?? null); setGameId(wire.id); setStatus(wire.status); setResult(wire.result ?? '');
-    setTimed(wire.time); setClocks(wire.clocks); setClockStarted(liveMoves.length > 0); setStudy(null); setSelected(null);
+    analysisRequestId.current += 1; setTimed(wire.time); setClocks(wire.clocks); setClockStarted(liveMoves.length > 0); setStudy(null); setSelected(null); setAnalysis(null); setPracticeMode(false);
     setNotice(wire.status === 'waiting' ? `Share room ${wire.id} with a friend` : wire.status === 'finished' ? `Game finished - ${wire.result}` : `${wire.turn === 'w' ? 'White' : 'Black'} to move`);
   };
   const applyLocalMove = (from, to, variation = false, promotionType = 'q') => {
     const next = new Chess(boardFen);
     try {
       const move = next.move({ from, to, promotion: promotionType }); const nextMoves = [...boardMoves, move]; setLastMove(move); setSelected(null);
-      if (variation) { setStudy((current) => ({ ...current, fen: next.fen(), moves: nextMoves })); setNotice('Variation active - keep exploring this line.'); }
-      else { setFen(next.fen()); setMoves(nextMoves); setClockStarted(true); if (next.isGameOver()) { setStatus('finished'); setResult(next.isCheckmate() ? (next.turn() === 'w' ? '0-1' : '1-0') : '½-½'); } playEventTone(move, next); setNotice(moveMessage(move, next)); }
+      analysisRequestId.current += 1;
+      if (variation) { setPracticeMode(true); setAnalysis(null); setStudy((current) => ({ ...current, fen: next.fen(), moves: nextMoves, sourcePly: null })); setNotice('Variation active - recalculating the next practice position.'); if (!next.isGameOver()) window.setTimeout(() => { void requestPositionAnalysis(next.fen()); }, 0); }
+      else { setFen(next.fen()); setMoves(nextMoves); setAnalysis(null); setClockStarted(true); if (next.isGameOver()) { setStatus('finished'); setResult(next.isCheckmate() ? (next.turn() === 'w' ? '0-1' : '1-0') : '½-½'); } playEventTone(move, next); setNotice(moveMessage(move, next)); if (practiceMode && !next.isGameOver()) window.setTimeout(() => { void requestPositionAnalysis(next.fen()); }, 0); }
     } catch { setNotice('That move is not legal.'); }
   };
   useEffect(() => () => { socket.current?.disconnect(); if (reviewPoll.current) window.clearInterval(reviewPoll.current); if (formationTimer.current) window.clearTimeout(formationTimer.current); musicPlayer.current?.pause(); }, []);
@@ -312,11 +314,19 @@ function App() {
     if (!response.ok) throw new Error(data.error || `Analysis server returned ${response.status}.`);
     return data;
   };
-  const analysePosition = async () => {
+  const requestPositionAnalysis = async (targetFen) => {
+    const requestId = analysisRequestId.current + 1; analysisRequestId.current = requestId;
     setThinking(true); setAnalysis(null); setAnalysisError('');
-    try { setAnalysis(await analysisRequest('/analysis/position', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fen: boardFen, depth: 12, lines: 3 }) })); }
-    catch (error) { setAnalysisError(error.message); setNotice(error.message); }
-    finally { setThinking(false); }
+    try {
+      const data = await analysisRequest('/analysis/position', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fen: targetFen, depth: 12, lines: 3 }) });
+      if (requestId === analysisRequestId.current) { setAnalysis(data); setNotice('Next practice position ready. Choose a recommended move.'); }
+    } catch (error) {
+      if (requestId === analysisRequestId.current) { setAnalysisError(error.message); setNotice(error.message); }
+    } finally { if (requestId === analysisRequestId.current) setThinking(false); }
+  };
+  const analysePosition = async () => {
+    setPracticeMode(true);
+    await requestPositionAnalysis(boardFen);
   };
   const pollReview = async (id) => {
     try {
@@ -366,7 +376,7 @@ function App() {
     catch { setNotice('Could not copy the room code.'); }
   };
   const copyCurrentPgn = async () => {
-    const pgn = makePgn(moves, result || '*');
+    const pgn = makeMoveRecord(moves);
     if (!pgn) return setNotice('Play at least one move before copying PGN.');
     try { await navigator.clipboard.writeText(pgn); setNotice('Current game PGN copied to clipboard.'); setToast('PGN copied ✓'); }
     catch { setPgnDraft(pgn); setPgnOpen(true); setNotice('Clipboard access was blocked. Copy the PGN from the text box.'); }
@@ -392,7 +402,7 @@ function App() {
     }
     setNotice('Thank you for supporting Senai Vyuham ❤️');
   };
-  const openStudy = (item) => { const pastMoves = moves.slice(0, item.ply - 1); setStudy({ fen: item.before, moves: pastMoves, sourcePly: item.ply }); setSelected(null); setLastMove(pastMoves.at(-1) ?? null); setNotice(`${qualityLabel[item.quality]} on ${item.san}. Try another continuation from this position.`); };
+  const openStudy = (item) => { const pastMoves = moves.slice(0, item.ply - 1); setPracticeMode(true); setStudy({ fen: item.before, moves: pastMoves, sourcePly: item.ply }); setSelected(null); setLastMove(pastMoves.at(-1) ?? null); setNotice(`${qualityLabel[item.quality]} on ${item.san}. Try another continuation from this position.`); };
   const showPly = (ply) => {
     const visibleMoves = moves.slice(0, Math.max(0, Math.min(moves.length, ply)));
     const replay = new Chess();
@@ -401,7 +411,7 @@ function App() {
     setSelected(null); setLastMove(visibleMoves.at(-1) ?? null);
     setNotice(visibleMoves.length ? `Viewing move ${visibleMoves.length} of ${moves.length}.` : 'Starting position.');
   };
-  const clearBoardView = () => { setSelected(null); setAnalysis(null); setStudy(null); setLastMove(moves.at(-1) ?? null); setNotice('Board view cleared.'); };
+  const clearBoardView = () => { analysisRequestId.current += 1; setSelected(null); setAnalysis(null); setPracticeMode(false); setStudy(null); setLastMove(moves.at(-1) ?? null); setNotice('Board view cleared.'); };
   const installApp = async () => {
     if (!installPrompt) return;
     await installPrompt.prompt();
@@ -422,6 +432,7 @@ function App() {
   const selectedReview = study ? reviewItems.find((item) => item.ply === study.sourcePly) : null;
   const best = study ? selectedReview?.best?.[0] ?? analysis?.lines?.[0] : analysis?.lines?.[0];
   const recommendationLines = study ? (selectedReview?.best ?? analysis?.lines ?? []) : (analysis?.lines ?? []);
+  const practiceMove = recommendationLines[0]?.pv?.[0]?.length >= 4 ? { from: recommendationLines[0].pv[0].slice(0, 2), to: recommendationLines[0].pv[0].slice(2, 4), promotion: recommendationLines[0].pv[0][4] || 'q' } : null;
   const suggestionArrows = (() => {
     const seen = new Set(); const arrows = recommendationLines.slice(0, 3).flatMap((line, index) => {
       const uci = line?.pv?.[0]; if (!uci || uci.length < 4) return [];
@@ -481,7 +492,7 @@ function App() {
         <button className="primary" onClick={analyseGame} disabled={reviewLoading || !moves.length}>{reviewLoading ? `Analysing ${review?.completed ?? 0}/${review?.total ?? moves.length}` : 'Analyse full game'}</button>
         <button className="secondary" onClick={analysePosition} disabled={thinking}>{thinking ? 'Engine thinking…' : study ? 'Analyse variation position' : 'Analyse current position'}</button>
         {analysisError && <div className="analysis-error" role="alert">{analysisError}<button onClick={analyseGame} disabled={reviewLoading || !moves.length}>Retry review</button></div>}
-        {best && <div className="engine-result"><div className="score">{best.whiteScore?.mate != null ? `M${best.whiteScore.mate}` : `${best.whiteScore?.cp >= 0 ? '+' : ''}${((best.whiteScore?.cp ?? 0) / 100).toFixed(2)}`}</div><span>White win chance: {best.whiteChance}%</span><p><b>Best continuation</b><br />{best.san?.join('  ')}</p>{recommendationLines.length > 1 && <div className="engine-lines" aria-label="Alternative engine continuations">{recommendationLines.slice(0, 3).map((line, index) => <div key={`${line.rank}-${line.pv?.[0]}`} className={`engine-line engine-line-${index === 0 ? 'best' : index === 1 ? 'brilliant' : 'playable'}`}><b>{index === 0 ? 'Best' : index === 1 ? 'Brilliant alternative' : 'Playable option'}</b><span>{line.san?.slice(0, 3).join('  ')}</span></div>)}</div>}</div>}
+        {best && <div className="engine-result"><div className="score">{best.whiteScore?.mate != null ? `M${best.whiteScore.mate}` : `${best.whiteScore?.cp >= 0 ? '+' : ''}${((best.whiteScore?.cp ?? 0) / 100).toFixed(2)}`}</div><span>White win chance: {best.whiteChance}%</span><p><b>Best continuation</b><br />{best.san?.join('  ')}</p>{recommendationLines.length > 1 && <div className="engine-lines" aria-label="Alternative engine continuations">{recommendationLines.slice(0, 3).map((line, index) => <div key={`${line.rank}-${line.pv?.[0]}`} className={`engine-line engine-line-${index === 0 ? 'best' : index === 1 ? 'brilliant' : 'playable'}`}><b>{index === 0 ? 'Best' : index === 1 ? 'Brilliant alternative' : 'Playable option'}</b><span>{line.san?.slice(0, 3).join('  ')}</span></div>)}</div>}{practiceMode && practiceMove && <button className="practice-button" type="button" onClick={() => play(practiceMove.from, practiceMove.to, practiceMove.promotion)} disabled={thinking || boardStatus !== 'active'}>Practice best move <span>{practiceMove.from} to {practiceMove.to}</span></button>}</div>}
         {reviewLoading && <div className="analysis-progress"><div className="analysis-progress-head"><strong>Reviewing moves</strong><span>{reviewProgress}%</span></div><div className="progress-track"><i style={{ width: `${Math.max(4, reviewProgress)}%` }} /></div><small>Senai Vyuham is evaluating each position. You can keep this page open.</small></div>}
         {review?.status === 'complete' && <><ChartGameReview items={reviewItems} onOpen={openStudy} /><button className="secondary share-review" onClick={shareAnalysis} disabled={sharePreparing}>{sharePreparing && <span className="button-spinner" aria-hidden="true"/>}{sharePreparing ? 'Preparing report...' : 'Share game analysis'}</button></>}
         <div className="history"><div className="history-heading"><p className="label">MOVE HISTORY</p><div className="pgn-actions"><button className="tool-button tool-button-pgn tool-button-copy" onClick={copyCurrentPgn} disabled={!moves.length}>Copy PGN</button><button className="tool-button tool-button-pgn tool-button-paste" onClick={() => { setPgnDraft(''); setPgnOpen(true); }}>Paste PGN</button></div></div>{moves.length ? <div className="moves">{moves.map((move, index) => <button key={`${move.san}-${index}`} data-side={index % 2 === 0 ? 'white' : 'black'} aria-label={`${index % 2 === 0 ? 'White' : 'Black'} move ${move.san}`} className={reviewItems[index] ? qualityClass(reviewItems[index].quality) : ''} onClick={() => reviewItems[index] && openStudy(reviewItems[index])}>{index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}{move.san}</button>)}</div> : <p className="subtle">Your moves will appear here.</p>}</div>
