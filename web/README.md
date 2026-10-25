@@ -1,4 +1,4 @@
-# LineChess Web — React + Vite
+# Senai Vyuham Web - React + Vite
 
 This is a separate React browser app. It does not modify the Expo/React Native mobile app.
 

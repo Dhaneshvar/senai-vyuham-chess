@@ -19,10 +19,12 @@ const initialRoomCode = new URLSearchParams(window.location.search).get('room')?
 const developerProfileUrl = import.meta.env.VITE_DEVELOPER_PROFILE_URL?.trim() || 'https://www.linkedin.com/in/dhaneshvar/';
 const donationUrl = import.meta.env.VITE_DONATION_URL?.trim() || '';
 const isLocalHost = ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
-const suggestedServer = configuredServer || (isLocalHost ? 'http://YOUR_LAPTOP_WIFI_IP:3001' : `${window.location.protocol}//${window.location.hostname}:3001`);
+const suggestedServer = configuredServer || (isLocalHost ? 'http://localhost:3001' : `${window.location.protocol}//${window.location.hostname}:3001`);
 const initialServer = () => {
   const saved = read('linechess-server');
-  return window.location.hostname !== 'localhost' && /^https?:\/\/localhost(?::\d+)?\/?$/.test(saved) ? suggestedServer : saved || suggestedServer;
+  if (configuredServer) return configuredServer;
+  if (!saved || saved.includes('YOUR_LAPTOP_WIFI_IP')) return suggestedServer;
+  return window.location.hostname !== 'localhost' && /^https?:\/\/localhost(?::\d+)?\/?$/.test(saved) ? suggestedServer : saved;
 };
 const initialGraphicsQuality = () => {
   const saved = read('linechess-graphics');
@@ -36,9 +38,15 @@ if ('serviceWorker' in navigator && import.meta.env.PROD) {
   window.addEventListener('load', () => { void navigator.serviceWorker.register('/sw.js'); });
 }
 const formatClock = (value, timed) => timed ? `${Math.floor(Math.max(0, value) / 60)}:${String(Math.max(0, value) % 60).padStart(2, '0')}` : '∞';
-const makePgn = (moves) => {
+const makePgn = (moves, result = '*') => {
   const chess = new Chess();
-  try { moves.forEach((move) => chess.move({ from: move.from, to: move.to, promotion: move.promotion || 'q' })); return chess.pgn(); } catch { return ''; }
+  try {
+    moves.forEach((move) => chess.move({ from: move.from, to: move.to, promotion: move.promotion || 'q' }));
+    const today = new Date();
+    const date = [today.getFullYear(), String(today.getMonth() + 1).padStart(2, '0'), String(today.getDate()).padStart(2, '0')].join('.');
+    chess.header('Event', 'Senai Vyuham Game', 'Site', window.location.host, 'Date', date, 'Round', '-', 'White', 'Player 1 (You)', 'Black', 'Player 2 (Opponent)', 'Result', result || '*');
+    return chess.pgn();
+  } catch { return ''; }
 };
 const qualityLabel = { best: 'Best', excellent: 'Excellent', good: 'Good', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder' };
 const qualityClass = (quality) => `quality-${quality || 'good'}`;
@@ -64,35 +72,45 @@ const wrapCanvasText = (context, text, x, y, maxWidth, lineHeight) => {
   if (line) { context.fillText(line, x, y + row * lineHeight); row += 1; }
   return row;
 };
-async function createReviewShareImage(items, moves, result) {
+const loadCanvasImage = (source) => new Promise((resolve) => {
+  const image = new Image();
+  image.onload = () => resolve(image);
+  image.onerror = () => resolve(null);
+  image.src = source;
+});
+async function createReviewShareImage(items, moves, result, pgn) {
   const notation = moves.map((move, index) => `${index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}${move.san}`).join(' ');
-  const historyRows = Math.max(1, Math.ceil(Math.max(1, notation.length) / 90));
-  const canvas = document.createElement('canvas'); canvas.width = 1200; canvas.height = Math.max(1500, 1080 + historyRows * 27 + 110);
+  const canvas = document.createElement('canvas'); canvas.width = 1200; canvas.height = 1380;
   const context = canvas.getContext('2d'); if (!context) return null;
-  context.fillStyle = '#101812'; context.fillRect(0, 0, canvas.width, canvas.height);
-  const panel = (x, y, width, height, fill = '#1b2a20') => { context.fillStyle = fill; context.fillRect(x, y, width, height); };
+  const background = context.createLinearGradient(0, 0, canvas.width, canvas.height); background.addColorStop(0, '#17251b'); background.addColorStop(1, '#09110c'); context.fillStyle = background; context.fillRect(0, 0, canvas.width, canvas.height);
+  const panel = (x, y, width, height, fill = '#17251b', radius = 22) => { context.fillStyle = fill; context.beginPath(); context.roundRect(x, y, width, height, radius); context.fill(); context.strokeStyle = '#314c39'; context.lineWidth = 2; context.stroke(); };
   const text = (value, x, y, size, color = '#f8f3e9', weight = '600') => { context.font = `${weight} ${size}px Inter, Arial, sans-serif`; context.fillStyle = color; context.fillText(value, x, y); };
   const white = items.filter((item) => item.ply % 2 === 1); const black = items.filter((item) => item.ply % 2 === 0);
   const whiteCounts = reviewQualityCounts(white); const blackCounts = reviewQualityCounts(black);
-  text('SENAI VYUHAM', 58, 72, 28, '#b8f36a', '900'); text('GAME REVIEW · EVALUATION', 58, 112, 18, '#9bac9d', '700');
-  text('Player 1 (You)', 58, 174, 24, '#f8f3e9', '800'); text('Player 2 (Opponent)', 650, 174, 24, '#f8f3e9', '800');
-  panel(48, 198, 510, 150, '#17251b'); panel(642, 198, 510, 150, '#17251b');
-  text(`White · ${reviewScore(white)}% accuracy`, 72, 246, 25, '#b8f36a', '900'); text(`Black · ${reviewScore(black)}% accuracy`, 666, 246, 25, '#b8f36a', '900');
-  text(`Best ${whiteCounts.best || 0}   Good ${whiteCounts.good || 0}   Mistake ${whiteCounts.mistake || 0}   Blunder ${whiteCounts.blunder || 0}`, 72, 294, 16, '#c2cec3');
-  text(`Excellent ${whiteCounts.excellent || 0}   Inaccuracy ${whiteCounts.inaccuracy || 0}`, 72, 322, 16, '#c2cec3');
-  text(`Best ${blackCounts.best || 0}   Good ${blackCounts.good || 0}   Mistake ${blackCounts.mistake || 0}   Blunder ${blackCounts.blunder || 0}`, 666, 294, 16, '#c2cec3');
-  text(`Excellent ${blackCounts.excellent || 0}   Inaccuracy ${blackCounts.inaccuracy || 0}`, 666, 322, 16, '#c2cec3');
-  text(result ? `Result · ${result}` : 'Game review', 58, 398, 22, '#f8f3e9', '800'); text('ENGINE EVALUATION', 58, 440, 16, '#9bac9d', '700');
-  panel(48, 460, 1104, 300, '#0c1510');
-  const gx = 82; const gy = 500; const gw = 1036; const gh = 210; context.strokeStyle = '#304335'; context.lineWidth = 1;
-  [0, .5, 1].forEach((fraction) => { const y = gy + gh * fraction; context.beginPath(); context.moveTo(gx, y); context.lineTo(gx + gw, y); context.stroke(); });
+  const logo = await loadCanvasImage(brandLogoUrl);
+  if (logo) context.drawImage(logo, 56, 42, 82, 82);
+  text('SENAI VYUHAM', 158, 78, 31, '#b8f36a', '900'); text('GAME INTELLIGENCE REPORT', 158, 108, 15, '#9bac9d', '800');
+  panel(948, 48, 194, 68, '#b8f36a', 34); text(result ? `RESULT  ${result}` : 'GAME REVIEW', 984, 91, 18, '#101812', '900');
+  text('Player 1 (You)', 58, 174, 24, '#f8f3e9', '800'); text('VS', 581, 174, 16, '#9bac9d', '900'); text('Player 2 (Opponent)', 650, 174, 24, '#f8f3e9', '800');
+  panel(48, 198, 510, 154); panel(642, 198, 510, 154);
+  text(`White  ${reviewScore(white)}%`, 72, 249, 30, '#b8f36a', '900'); text(`Black  ${reviewScore(black)}%`, 666, 249, 30, '#b8f36a', '900');
+  text('ACCURACY', 72, 278, 13, '#9bac9d', '800'); text('ACCURACY', 666, 278, 13, '#9bac9d', '800');
+  text(`Best ${whiteCounts.best || 0}  |  Good ${whiteCounts.good || 0}  |  Mistake ${whiteCounts.mistake || 0}  |  Blunder ${whiteCounts.blunder || 0}`, 72, 322, 15, '#c2cec3');
+  text(`Best ${blackCounts.best || 0}  |  Good ${blackCounts.good || 0}  |  Mistake ${blackCounts.mistake || 0}  |  Blunder ${blackCounts.blunder || 0}`, 666, 322, 15, '#c2cec3');
+  text('ENGINE EVALUATION', 58, 407, 15, '#b8f36a', '900'); text('White win chance through the game', 58, 434, 15, '#9bac9d');
+  panel(48, 456, 1104, 336, '#0c1510');
+  const gx = 104; const gy = 500; const gw = 992; const gh = 230; context.strokeStyle = '#304335'; context.lineWidth = 1;
+  [0, .25, .5, .75, 1].forEach((fraction) => { const y = gy + gh * fraction; context.beginPath(); context.moveTo(gx, y); context.lineTo(gx + gw, y); context.stroke(); text(`${100 - fraction * 100}%`, 60, y + 5, 12, '#738676'); });
   if (items.length) { context.beginPath(); items.forEach((item, index) => { const x = gx + (items.length === 1 ? gw / 2 : (index / (items.length - 1)) * gw); const y = gy + gh - ((item.actual?.whiteChance ?? 50) / 100) * gh; index ? context.lineTo(x, y) : context.moveTo(x, y); }); context.strokeStyle = '#b8f36a'; context.lineWidth = 5; context.stroke(); items.forEach((item, index) => { const x = gx + (items.length === 1 ? gw / 2 : (index / (items.length - 1)) * gw); const y = gy + gh - ((item.actual?.whiteChance ?? 50) / 100) * gh; context.fillStyle = item.quality === 'blunder' ? '#ed7570' : item.quality === 'mistake' ? '#f09a58' : item.quality === 'inaccuracy' ? '#e6c25c' : '#f8f3e9'; context.beginPath(); context.arc(x, y, 7, 0, Math.PI * 2); context.fill(); }); }
-  text('White advantage', gx, 742, 14, '#9bac9d'); text('Black advantage', gx + gw - 130, 742, 14, '#9bac9d');
-  text('KEY MOMENTS', 58, 806, 16, '#b8f36a', '900'); const turning = items.filter((item) => ['inaccuracy', 'mistake', 'blunder'].includes(item.quality)).slice(0, 5); let y = 842;
-  if (!turning.length) { text('No major mistakes detected.', 58, y, 18, '#c2cec3'); y += 34; } else turning.forEach((item) => { text(`${Math.ceil(item.ply / 2)}${item.ply % 2 ? '.' : '…'} ${item.san} · ${qualityLabel[item.quality]}`, 58, y, 18, item.quality === 'blunder' ? '#ed7570' : item.quality === 'mistake' ? '#f09a58' : '#e6c25c', '700'); y += 30; });
-  text('MOVE HISTORY · PGN', 58, 1010, 16, '#b8f36a', '900'); text('COPY PGN', 1018, 1010, 14, '#b8f36a', '900');
-  context.fillStyle = '#c2cec3'; context.font = '500 17px ui-monospace, Consolas, monospace'; wrapCanvasText(context, notation || 'No moves recorded.', 58, 1050, 1050, 27);
-  text('Shared from Senai Vyuham · Understand every move.', 58, canvas.height - 60, 16, '#9bac9d');
+  text('Move 1', gx, 765, 13, '#9bac9d'); text(`Move ${items.length}`, gx + gw - 58, 765, 13, '#9bac9d');
+  text('KEY MOMENTS', 58, 842, 15, '#b8f36a', '900'); const turning = items.filter((item) => ['inaccuracy', 'mistake', 'blunder'].includes(item.quality)).slice(0, 4); let y = 878;
+  if (!turning.length) { text('No major mistakes detected.', 58, y, 18, '#c2cec3'); y += 34; } else turning.forEach((item) => { text(`${Math.ceil(item.ply / 2)}${item.ply % 2 ? '.' : '...'} ${item.san}  -  ${qualityLabel[item.quality]}`, 58, y, 18, item.quality === 'blunder' ? '#ed7570' : item.quality === 'mistake' ? '#f09a58' : '#e6c25c', '700'); y += 30; });
+  const pgnStart = Math.max(990, y + 34); panel(48, pgnStart, 1104, 270, '#111c15');
+  text('PGN MOVE RECORD', 72, pgnStart + 42, 15, '#b8f36a', '900'); text('Ready to copy inside Senai Vyuham', 848, pgnStart + 42, 13, '#9bac9d', '700');
+  const headers = pgn.split('\n\n')[0].split('\n').filter(Boolean).slice(0, 7).join('   ');
+  context.fillStyle = '#8fa08f'; context.font = '500 13px ui-monospace, Consolas, monospace'; wrapCanvasText(context, headers, 72, pgnStart + 76, 1038, 23);
+  context.fillStyle = '#e5ede5'; context.font = '600 17px ui-monospace, Consolas, monospace'; wrapCanvasText(context, notation || 'No moves recorded.', 72, pgnStart + 142, 1038, 27);
+  text('Shared from Senai Vyuham  -  Play closer. Understand every move.', 58, canvas.height - 48, 15, '#9bac9d');
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/png', .92));
 }
 function playEventTone(move, next) {
@@ -124,8 +142,8 @@ function App() {
   const [mode, setMode] = useState(initialRoomCode ? 'online' : 'local'); const [selected, setSelected] = useState(null); const [orientation, setOrientation] = useState('w'); const [lastMove, setLastMove] = useState(null);
   const [status, setStatus] = useState('active'); const [result, setResult] = useState(''); const [timed, setTimed] = useState(600); const [clocks, setClocks] = useState({ w: 600, b: 600 }); const [clockStarted, setClockStarted] = useState(false);
   const [server, setServer] = useState(initialServer); const [name, setName] = useState(read('linechess-name')); const [connected, setConnected] = useState(false);
-  const [gameId, setGameId] = useState(null); const [playerColor, setPlayerColor] = useState('w'); const [joinCode, setJoinCode] = useState(initialRoomCode); const [notice, setNotice] = useState(initialRoomCode ? `Room invite ready · enter your name and join ${initialRoomCode}.` : 'White to move');
-  const [analysis, setAnalysis] = useState(null); const [thinking, setThinking] = useState(false); const [review, setReview] = useState(null); const [reviewLoading, setReviewLoading] = useState(false); const [analysisError, setAnalysisError] = useState(''); const [study, setStudy] = useState(null); const [promotion, setPromotion] = useState(null); const [pgnOpen, setPgnOpen] = useState(false); const [pgnDraft, setPgnDraft] = useState(''); const [pgnLoading, setPgnLoading] = useState(false); const [toast, setToast] = useState(''); const [threeOpen, setThreeOpen] = useState(true);
+  const [gameId, setGameId] = useState(null); const [playerColor, setPlayerColor] = useState('w'); const [joinCode, setJoinCode] = useState(initialRoomCode); const [notice, setNotice] = useState(initialRoomCode ? `Room invite ready - enter your name and join ${initialRoomCode}.` : 'White to move');
+  const [analysis, setAnalysis] = useState(null); const [thinking, setThinking] = useState(false); const [review, setReview] = useState(null); const [reviewLoading, setReviewLoading] = useState(false); const [analysisError, setAnalysisError] = useState(''); const [study, setStudy] = useState(null); const [promotion, setPromotion] = useState(null); const [pgnOpen, setPgnOpen] = useState(false); const [pgnDraft, setPgnDraft] = useState(''); const [pgnLoading, setPgnLoading] = useState(false); const [sharePreparing, setSharePreparing] = useState(false); const [toast, setToast] = useState(''); const [threeOpen, setThreeOpen] = useState(true);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [boardSkin, setBoardSkin] = useState(() => read('linechess-board-skin', 'classic')); const [pieceSkin, setPieceSkin] = useState(() => read('linechess-piece-skin', 'classic'));
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -147,6 +165,11 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [toast]);
   useEffect(() => {
+    if (!server.includes('YOUR_LAPTOP_WIFI_IP')) return;
+    setServer(suggestedServer);
+    localStorage.setItem('linechess-server', suggestedServer);
+  }, [server]);
+  useEffect(() => {
     const handleInstallPrompt = (event) => { event.preventDefault(); setInstallPrompt(event); };
     const handleInstalled = () => { setInstallPrompt(null); setToast('Senai Vyuham installed ✓'); };
     window.addEventListener('beforeinstallprompt', handleInstallPrompt);
@@ -167,13 +190,13 @@ function App() {
   const sync = (wire) => {
     const liveMoves = wire.history ?? []; setFen(wire.fen); setMoves(liveMoves); setLastMove(liveMoves.at(-1) ?? null); setGameId(wire.id); setStatus(wire.status); setResult(wire.result ?? '');
     setTimed(wire.time); setClocks(wire.clocks); setClockStarted(liveMoves.length > 0); setStudy(null); setSelected(null);
-    setNotice(wire.status === 'waiting' ? `Share room ${wire.id} with a friend` : wire.status === 'finished' ? `Game finished · ${wire.result}` : `${wire.turn === 'w' ? 'White' : 'Black'} to move`);
+    setNotice(wire.status === 'waiting' ? `Share room ${wire.id} with a friend` : wire.status === 'finished' ? `Game finished - ${wire.result}` : `${wire.turn === 'w' ? 'White' : 'Black'} to move`);
   };
   const applyLocalMove = (from, to, variation = false, promotionType = 'q') => {
     const next = new Chess(boardFen);
     try {
       const move = next.move({ from, to, promotion: promotionType }); const nextMoves = [...boardMoves, move]; setLastMove(move); setSelected(null);
-      if (variation) { setStudy((current) => ({ ...current, fen: next.fen(), moves: nextMoves })); setNotice('Variation active — keep exploring this line.'); }
+      if (variation) { setStudy((current) => ({ ...current, fen: next.fen(), moves: nextMoves })); setNotice('Variation active - keep exploring this line.'); }
       else { setFen(next.fen()); setMoves(nextMoves); setClockStarted(true); if (next.isGameOver()) { setStatus('finished'); setResult(next.isCheckmate() ? (next.turn() === 'w' ? '0-1' : '1-0') : '½-½'); } playEventTone(move, next); setNotice(moveMessage(move, next)); }
     } catch { setNotice('That move is not legal.'); }
   };
@@ -312,14 +335,19 @@ function App() {
     catch (error) { window.clearInterval(reviewPoll.current); reviewPoll.current = null; setReviewLoading(false); setAnalysisError(error.message); setNotice(error.message); }
   };
   const shareAnalysis = async () => {
-    if (review?.status !== 'complete') return;
+    if (review?.status !== 'complete' || sharePreparing) return;
     const white = review.items.filter((item) => item.ply % 2 === 1);
     const black = review.items.filter((item) => item.ply % 2 === 0);
+    const whiteCounts = reviewQualityCounts(white); const blackCounts = reviewQualityCounts(black);
     const turning = review.items.filter((item) => ['inaccuracy', 'mistake', 'blunder'].includes(item.quality)).slice(0, 6);
-    const message = `Senai Vyuham · Game review\nPlayer 1 (You) · White ${reviewScore(white)}% accuracy\nPlayer 2 (Opponent) · Black ${reviewScore(black)}% accuracy\n${turning.length ? `Key moments: ${turning.map((item) => `${Math.ceil(item.ply / 2)}${item.ply % 2 ? '.' : '…'} ${item.san} (${qualityLabel[item.quality]})`).join(', ')}` : 'No major mistakes detected.'}\n\nPGN:\n${makePgn(moves)}`;
+    const pgn = makePgn(moves, result || '*');
+    const countLine = (counts) => `Best ${counts.best || 0} | Excellent ${counts.excellent || 0} | Good ${counts.good || 0} | Inaccuracy ${counts.inaccuracy || 0} | Mistake ${counts.mistake || 0} | Blunder ${counts.blunder || 0}`;
+    const message = `*SENAI VYUHAM*\n*GAME INTELLIGENCE REPORT*\n\n*Player 1 (You)* - White - ${reviewScore(white)}% accuracy\n${countLine(whiteCounts)}\n\n*Player 2 (Opponent)* - Black - ${reviewScore(black)}% accuracy\n${countLine(blackCounts)}\n\n*Result:* ${result || '*'}\n\n*Key moments*\n${turning.length ? turning.map((item) => `${Math.ceil(item.ply / 2)}${item.ply % 2 ? '.' : '...'} ${item.san} - ${qualityLabel[item.quality]}`).join('\n') : 'No major mistakes detected.'}\n\n*PGN move record*\n${pgn}\n\nShared from Senai Vyuham - Play closer. Understand every move.`;
+    setSharePreparing(true);
     try {
-      const imageBlob = await createReviewShareImage(review.items, moves, result);
+      const imageBlob = await createReviewShareImage(review.items, moves, result, pgn);
       const file = imageBlob ? new File([imageBlob], 'senai-vyuham-game-review.png', { type: 'image/png' }) : null;
+      setSharePreparing(false);
       if (navigator.share && file && navigator.canShare?.({ files: [file] })) {
         await navigator.share({ title: 'Senai Vyuham game review', text: message, files: [file] });
         setNotice('Review card shared with the PGN.');
@@ -330,9 +358,15 @@ function App() {
         setNotice('Game analysis copied to clipboard. Use Copy PGN for the move record.');
       }
     } catch (error) { if (error.name !== 'AbortError') setNotice('Could not share the review on this device.'); }
+    finally { setSharePreparing(false); }
+  };
+  const copyRoomCode = async () => {
+    if (!gameId) return;
+    try { await navigator.clipboard.writeText(gameId); setToast('Room code copied!'); }
+    catch { setNotice('Could not copy the room code.'); }
   };
   const copyCurrentPgn = async () => {
-    const pgn = makePgn(moves);
+    const pgn = makePgn(moves, result || '*');
     if (!pgn) return setNotice('Play at least one move before copying PGN.');
     try { await navigator.clipboard.writeText(pgn); setNotice('Current game PGN copied to clipboard.'); setToast('PGN copied ✓'); }
     catch { setPgnDraft(pgn); setPgnOpen(true); setNotice('Clipboard access was blocked. Copy the PGN from the text box.'); }
@@ -412,17 +446,17 @@ function App() {
         <label className="global-toggle"><input type="checkbox" checked={music} onChange={toggleMusic}/> Background music</label>
       </div><details><summary>Next release</summary><p>Connected board · AI coach · Ask an arbiter · Chess960 · Rapid and blitz · Tournaments</p></details>
     </section></div>}
-    <section className="intro"><p>CHESS, WITHOUT THE DOWNLOAD</p><h1>Play closer to the board.<br />Understand every move.</h1><div>Play live, see the battle in 3D, and improve with AI insight—learning from every decision.</div></section></section>
+    <section className="intro"><p>CHESS, WITHOUT THE DOWNLOAD</p><h1>Play closer to the board.<br />Understand every move.</h1><div>Play live, see the battle in 3D, and improve with AI insight - learning from every decision.</div></section></section>
     <AppearanceControls boardSkin={boardSkin} setBoardSkin={setBoardSkin} pieceSkin={pieceSkin} setPieceSkin={setPieceSkin} connected={connected} settingsOpen={settingsOpen} setSettingsOpen={setSettingsOpen}/>
     <section className={`workspace ${threeOpen ? 'with-3d' : ''}`}>
-      <aside className="card controls"><p className="label">GAME SETUP</p><div className="tabs"><button className={mode === 'local' ? 'selected' : ''} onClick={() => reset(timed, 'local')}>On this device</button><button className={mode === 'online' ? 'selected' : ''} onClick={openOnlineRoom}>Online room</button></div>{mode === 'online' && <p className="online-steps"><b>1</b> Connect · <b>2</b> Create or enter a code · <b>3</b> Share the invite</p>}<label>TIME CONTROL<select value={timed} onChange={(event) => reset(Number(event.target.value), mode)}><option value="0">No timer</option><option value="300">5 minutes</option><option value="600">10 minutes</option></select></label>{mode === 'local' ? status === 'finished' ? null : <button className="primary" onClick={() => reset(timed, 'local')}>Start new game</button> : <><label>YOUR NAME<input value={name} maxLength="32" placeholder="Player name" onChange={(event) => setName(event.target.value)} /></label><label>GAME SERVER<input value={server} placeholder={suggestedServer} onChange={(event) => setServer(event.target.value)} /></label><p className="connection-hint">{isLocalHost ? <>On another device, replace <b>YOUR_LAPTOP_WIFI_IP</b> with your laptop’s IPv4 address (for example, 192.168.1.10). Keep port <b>3001</b>.</> : <>Use the server address shown above. For public play, use your deployed HTTPS API URL.</>}</p><button className="secondary" onClick={connect}>Connect server</button><p className="connection-hint">{connected ? 'Connected — room actions are ready.' : 'Connecting unlocks room creation and joining.'}</p><button className="primary" disabled={!connected} onClick={createRoom}>Create private room</button><label>JOIN ROOM CODE<input value={joinCode} maxLength="8" placeholder="A1B2C3D4" onChange={(event) => setJoinCode(event.target.value.toUpperCase())} /></label><button className="secondary" disabled={!connected || !joinCode} onClick={joinRoom}>Join room</button>{gameId && <div className="room-code"><small>ROOM CODE</small><strong>{gameId}</strong><button onClick={shareRoomInvite}>Share invite link</button></div>}</>}</aside>
+      <aside className="card controls"><p className="label">GAME SETUP</p><div className="tabs"><button className={mode === 'local' ? 'selected' : ''} onClick={() => reset(timed, 'local')}>On this device</button><button className={mode === 'online' ? 'selected' : ''} onClick={openOnlineRoom}>Online room</button></div>{mode === 'online' && <p className="online-steps"><b>1</b> Connect - <b>2</b> Create or enter a code - <b>3</b> Share the invite</p>}<label>TIME CONTROL<select value={timed} onChange={(event) => reset(Number(event.target.value), mode)}><option value="0">No timer</option><option value="300">5 minutes</option><option value="600">10 minutes</option></select></label>{mode === 'local' ? status === 'finished' ? null : <button className="primary" onClick={() => reset(timed, 'local')}>Start new game</button> : <><label>YOUR NAME<input value={name} maxLength="32" placeholder="Player name" onChange={(event) => setName(event.target.value)} /></label><details className="advanced-server"><summary>Advanced server settings</summary><label>GAME SERVER<input value={server} placeholder={suggestedServer} onChange={(event) => setServer(event.target.value)} /></label><p className="connection-hint">{isLocalHost ? <>For local testing on another device, replace <b>YOUR_LAPTOP_WIFI_IP</b> with your laptop IPv4 address and keep port <b>3001</b>.</> : <>The deployed HTTPS API is already selected. Change this only when testing another server.</>}</p></details><button className="secondary" onClick={connect}>{connected ? 'Reconnect server' : 'Connect server'}</button><p className="connection-hint">{connected ? 'Connected - room actions are ready.' : 'Connecting unlocks room creation and joining.'}</p><button className="primary" disabled={!connected} onClick={createRoom}>Create private room</button><label>JOIN ROOM CODE<input value={joinCode} maxLength="8" placeholder="A1B2C3D4" onChange={(event) => setJoinCode(event.target.value.toUpperCase())} /></label><button className="secondary" disabled={!connected || !joinCode} onClick={joinRoom}>Join room</button>{gameId && <div className="room-code"><small>ROOM CODE</small><div className="room-code-value"><strong>{gameId}</strong><button className="room-code-copy" onClick={copyRoomCode} aria-label="Copy room code" title="Copy room code"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8h10v11H8z"/><path d="M6 16H4V5h10v2"/></svg></button></div><button onClick={shareRoomInvite}>Share invite link</button></div>}</>}</aside>
       <section className="game-area">
         {result && <div className="game-result" role="status">RESULT · {result}</div>}
         <Player color={topSide} name={playerName(topSide)} time={formatClock(clocks[topSide], timed)} seconds={clocks[topSide]} active={game.turn() === topSide && status === 'active'} />
         <div className={`board ${study ? 'study-board' : ''}`} role="grid" aria-label="Chess board">{order.ranks.flatMap((rank, row) => order.columns.map((file, col) => { const square = `${file}${rank}`; const piece = game.get(square); const target = legal.find((move) => move.to === square); const moved = lastMove?.to === square; return <button key={square} className={`square ${(row + col) % 2 ? 'dark' : 'light'} ${selected === square ? 'selected' : ''} ${lastMove?.from === square || moved ? 'last' : ''} ${target ? piece ? 'capture' : 'legal' : ''}`} onClick={() => clickSquare(square)} aria-label={square}><span className="rank">{col === 0 ? rank : ''}</span>{piece && <span className={`piece ${piece.color} ${moved ? 'arrive' : ''}`}>{glyph[piece.color][piece.type]}</span>}<span className="file">{row === 7 ? file : ''}</span></button>; }))}{engineArrow && arrowStart && arrowEnd && <svg className="engine-arrow-layer" viewBox="0 0 100 100" aria-label={`Engine recommendation ${engineArrow.from} to ${engineArrow.to}`} role="img"><defs><marker id="engine-arrow-head" markerUnits="userSpaceOnUse" markerWidth="4" markerHeight="4" refX="3.2" refY="2" orient="auto"><path d="M0,0 L4,2 L0,4 z" /></marker></defs><line x1={arrowStart.x} y1={arrowStart.y} x2={arrowEnd.x} y2={arrowEnd.y} markerEnd="url(#engine-arrow-head)" /></svg>}{game.isCheckmate() && cagePosition && <div className="checkmate-cage" style={{ left: `${cagePosition.col * 12.5}%`, top: `${cagePosition.row * 12.5}%` }} aria-label="Checkmate: king arrested"><span className="cage-dome"/><span className="cage-chain">✦</span><span className="cage-king">♔</span></div>}{status === 'finished' && !game.isCheckmate() && <div className="draw-handshake" aria-label="Draw agreed"><span className="draw-king">♔</span><i className="handshake-glyph" aria-hidden="true"/><span className="draw-king">♚</span></div>}{status === 'finished' && game.isCheckmate() && <div className="victory-flourish" aria-label="Victory celebration">✦ ✿ ✦</div>}</div>
         <Player color={bottomSide} name={playerName(bottomSide)} time={formatClock(clocks[bottomSide], timed)} seconds={clocks[bottomSide]} active={game.turn() === bottomSide && status === 'active'} />
-        <p className="notice" aria-live="polite">{notice}</p><div className="board-navigation" aria-label="Board navigation"><button onClick={clearBoardView}>Clear</button><button onClick={() => reset(timed, mode)}>Reset</button><button onClick={() => showPly(study ? study.sourcePly - 1 : moves.length - 1)} disabled={!moves.length || (study?.sourcePly ?? moves.length) <= 0}>← Back</button><button onClick={() => showPly(study ? study.sourcePly + 1 : moves.length)} disabled={!study || study.sourcePly >= moves.length}>Front →</button></div>{study && <div className="study-banner"><span>WHAT-IF LINE · move {study.sourcePly}</span><div className="study-controls"><button onClick={() => stepStudy(-1)} disabled={!reviewItems.some((item) => item.ply < study.sourcePly)} aria-label="Previous analysed move">← Previous</button><button onClick={() => stepStudy(1)} disabled={!reviewItems.some((item) => item.ply > study.sourcePly)} aria-label="Next analysed move">Next →</button><button onClick={leaveStudy}>Return to game</button></div></div>}
-        <div className="board-actions"><button onClick={() => setOrientation(orientation === 'w' ? 'b' : 'w')}>Flip board</button>{status === 'finished' && mode === 'local' ? <button className="primary" onClick={playAgain}>Play again</button> : <><button className="danger" onClick={() => { if (mode === 'online' && gameId && !study) socket.current?.emit('game:resign', { gameId }); else if (!study) { setStatus('finished'); setResult(game.turn() === 'w' ? '0-1' : '1-0'); setNotice('You resigned.'); } }}>Resign</button><button onClick={offerDraw} disabled={status !== 'active' || Boolean(study) || formationActive}>Offer draw</button></>}</div>
+        <p className="notice" aria-live="polite">{notice}</p><div className="board-navigation" aria-label="Board navigation"><button className="tool-button tool-button-muted" onClick={clearBoardView}>Clear</button><button className="tool-button tool-button-reset" onClick={() => reset(timed, mode)}>Reset</button><button className="tool-button tool-button-nav" onClick={() => showPly(study ? study.sourcePly - 1 : moves.length - 1)} disabled={!moves.length || (study?.sourcePly ?? moves.length) <= 0}>← Back</button><button className="tool-button tool-button-nav" onClick={() => showPly(study ? study.sourcePly + 1 : moves.length)} disabled={!study || study.sourcePly >= moves.length}>Front →</button></div>{study && <div className="study-banner"><span>WHAT-IF LINE · move {study.sourcePly}</span><div className="study-controls"><button className="tool-button tool-button-nav" onClick={() => stepStudy(-1)} disabled={!reviewItems.some((item) => item.ply < study.sourcePly)} aria-label="Previous analysed move">← Previous</button><button className="tool-button tool-button-nav" onClick={() => stepStudy(1)} disabled={!reviewItems.some((item) => item.ply > study.sourcePly)} aria-label="Next analysed move">Next →</button><button className="tool-button tool-button-muted" onClick={leaveStudy}>Return to game</button></div></div>}
+        <div className="board-actions"><button className="tool-button tool-button-ghost" onClick={() => setOrientation(orientation === 'w' ? 'b' : 'w')}>Flip board</button>{status === 'finished' && mode === 'local' ? <button className="primary" onClick={playAgain}>Play again</button> : <><button className="tool-button tool-button-danger" onClick={() => { if (mode === 'online' && gameId && !study) socket.current?.emit('game:resign', { gameId }); else if (!study) { setStatus('finished'); setResult(game.turn() === 'w' ? '0-1' : '1-0'); setNotice('You resigned.'); } }}>Resign</button><button className="tool-button tool-button-draw" onClick={offerDraw} disabled={status !== 'active' || Boolean(study) || formationActive}>Offer draw</button></>}</div>
       </section>
       <aside className="card analysis">
         <p className="label">ANALYSIS LAB</p><h2>Every move has a story.</h2><p className="subtle">Review the game and explore key moments.</p>
@@ -431,10 +465,10 @@ function App() {
         {analysisError && <div className="analysis-error" role="alert">{analysisError}<button onClick={analyseGame} disabled={reviewLoading || !moves.length}>Retry review</button></div>}
         {best && <div className="engine-result"><div className="score">{best.whiteScore?.mate != null ? `M${best.whiteScore.mate}` : `${best.whiteScore?.cp >= 0 ? '+' : ''}${((best.whiteScore?.cp ?? 0) / 100).toFixed(2)}`}</div><span>White win chance: {best.whiteChance}%</span><p><b>Best continuation</b><br />{best.san?.join('  ')}</p></div>}
         {reviewLoading && <div className="analysis-progress"><div className="analysis-progress-head"><strong>Reviewing moves</strong><span>{reviewProgress}%</span></div><div className="progress-track"><i style={{ width: `${Math.max(4, reviewProgress)}%` }} /></div><small>Stockfish is evaluating each position. You can keep this page open.</small></div>}
-        {review?.status === 'complete' && <><ChartGameReview items={reviewItems} onOpen={openStudy} /><button className="secondary share-review" onClick={shareAnalysis}>Share game analysis</button></>}
-        <div className="history"><div className="history-heading"><p className="label">MOVE HISTORY</p><div className="pgn-actions"><button onClick={copyCurrentPgn} disabled={!moves.length}>Copy PGN</button><button onClick={() => { setPgnDraft(''); setPgnOpen(true); }}>Paste PGN</button></div></div>{moves.length ? <div className="moves">{moves.map((move, index) => <button key={`${move.san}-${index}`} data-side={index % 2 === 0 ? 'white' : 'black'} aria-label={`${index % 2 === 0 ? 'White' : 'Black'} move ${move.san}`} className={reviewItems[index] ? qualityClass(reviewItems[index].quality) : ''} onClick={() => reviewItems[index] && openStudy(reviewItems[index])}>{index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}{move.san}</button>)}</div> : <p className="subtle">Your moves will appear here.</p>}</div>
+        {review?.status === 'complete' && <><ChartGameReview items={reviewItems} onOpen={openStudy} /><button className="secondary share-review" onClick={shareAnalysis} disabled={sharePreparing}>{sharePreparing && <span className="button-spinner" aria-hidden="true"/>}{sharePreparing ? 'Preparing report...' : 'Share game analysis'}</button></>}
+        <div className="history"><div className="history-heading"><p className="label">MOVE HISTORY</p><div className="pgn-actions"><button className="tool-button tool-button-pgn tool-button-copy" onClick={copyCurrentPgn} disabled={!moves.length}>Copy PGN</button><button className="tool-button tool-button-pgn tool-button-paste" onClick={() => { setPgnDraft(''); setPgnOpen(true); }}>Paste PGN</button></div></div>{moves.length ? <div className="moves">{moves.map((move, index) => <button key={`${move.san}-${index}`} data-side={index % 2 === 0 ? 'white' : 'black'} aria-label={`${index % 2 === 0 ? 'White' : 'Black'} move ${move.san}`} className={reviewItems[index] ? qualityClass(reviewItems[index].quality) : ''} onClick={() => reviewItems[index] && openStudy(reviewItems[index])}>{index % 2 === 0 ? `${Math.floor(index / 2) + 1}. ` : ''}{move.san}</button>)}</div> : <p className="subtle">Your moves will appear here.</p>}</div>
       </aside><DeferredThreeBoard open={threeOpen} onOpenChange={setThreeOpen} fen={boardFen} moves={boardMoves} lastMove={lastMove} status={boardStatus} result={result} orientation={orientation} onMove={play} onPromote={(from, to, color) => setPromotion({ from, to, color })} quality={quality} coordinates={coordinates} sound={sound} view={cameraView} characterSet={characterSet} formationKey={formationKey} formationActive={formationActive}/>
-    </section>{boardEvent && <div className={`board-event ${compactBoardEvent ? 'compact' : ''}`} key={notice}>{compactBoardEvent ? boardEvent.replace(/^Capture!\s*/, '').replace(/\.$/, '') : boardEvent}</div>}{promotion && <PromotionPicker color={promotion.color} onChoose={(type) => { play(promotion.from, promotion.to, type); setPromotion(null); }} onCancel={() => setPromotion(null)} />}{pgnOpen && <div className="pgn-modal" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !pgnLoading) setPgnOpen(false); }}><section className="pgn-dialog" role="dialog" aria-modal="true" aria-labelledby="pgn-dialog-title" aria-busy={pgnLoading}><div className="pgn-dialog-heading"><div><p className="label">PGN TOOLS</p><h2 id="pgn-dialog-title">Copy or paste a game</h2></div><button onClick={() => setPgnOpen(false)} aria-label="Close PGN dialog" disabled={pgnLoading}>×</button></div><textarea value={pgnDraft} onChange={(event) => setPgnDraft(event.target.value)} placeholder="Paste PGN here…" aria-label="PGN text" disabled={pgnLoading}/><div className="pgn-dialog-actions"><button className="secondary" onClick={() => setPgnOpen(false)} disabled={pgnLoading}>Cancel</button><button className="primary" onClick={loadPgn} disabled={pgnLoading}>{pgnLoading && <span className="pgn-loading-spinner" aria-hidden="true"/>}{pgnLoading ? 'Loading PGN…' : 'Load PGN'}</button></div></section></div>}{toast && <div className="app-toast" role="status" aria-live="polite">{toast}</div>}<footer className="site-footer"><span>© {new Date().getFullYear()} · Developed by <a href={developerProfileUrl} target="_blank" rel="noreferrer">Master Dhaneshvar Maha</a> · Built with love for chess players and enthusiasts</span><div className="footer-actions">{installPrompt && <button className="install-app-button" onClick={installApp}>Install app</button>}<button className="donate-link" type="button" onClick={supportDeveloper} aria-label="Donate to support development">♥ Donate</button></div></footer>
+    </section>{boardEvent && <div className={`board-event ${compactBoardEvent ? 'compact' : ''}`} key={notice}>{compactBoardEvent ? boardEvent.replace(/^Capture!\s*/, '').replace(/\.$/, '') : boardEvent}</div>}{promotion && <PromotionPicker color={promotion.color} onChoose={(type) => { play(promotion.from, promotion.to, type); setPromotion(null); }} onCancel={() => setPromotion(null)} />}{sharePreparing && <div className="share-preparing" role="status" aria-live="polite" aria-busy="true"><div><img src={brandLogoUrl} alt=""/><span className="share-spinner" aria-hidden="true"/><strong>Preparing your game report</strong><small>Getting it ready to share with friends and family.</small></div></div>}{pgnOpen && <div className="pgn-modal" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !pgnLoading) setPgnOpen(false); }}><section className="pgn-dialog" role="dialog" aria-modal="true" aria-labelledby="pgn-dialog-title" aria-busy={pgnLoading}><div className="pgn-dialog-heading"><div><p className="label">PGN TOOLS</p><h2 id="pgn-dialog-title">Copy or paste a game</h2></div><button onClick={() => setPgnOpen(false)} aria-label="Close PGN dialog" disabled={pgnLoading}>×</button></div><textarea value={pgnDraft} onChange={(event) => setPgnDraft(event.target.value)} placeholder="Paste PGN here..." aria-label="PGN text" disabled={pgnLoading}/><div className="pgn-dialog-actions"><button className="secondary" onClick={() => setPgnOpen(false)} disabled={pgnLoading}>Cancel</button><button className="primary" onClick={loadPgn} disabled={pgnLoading}>{pgnLoading && <span className="pgn-loading-spinner" aria-hidden="true"/>}{pgnLoading ? 'Loading PGN...' : 'Load PGN'}</button></div></section></div>}{toast && <div className="app-toast" role="status" aria-live="polite">{toast}</div>}<footer className="site-footer"><span>© {new Date().getFullYear()} - Developed by <a href={developerProfileUrl} target="_blank" rel="noreferrer">Master Dhaneshvar Maha</a> - Built with love for chess players and enthusiasts</span><div className="footer-actions">{installPrompt && <button className="install-app-button" onClick={installApp}>Install app</button>}<button className="donate-link" type="button" onClick={supportDeveloper} aria-label="Donate to support development">♥ Donate</button></div></footer>
   </main></CaptureContext.Provider>;
 }
 function DeferredThreeBoard(props) {
@@ -454,7 +488,7 @@ function Player({ color, name, time, seconds, active }) {
 function PromotionPicker({ color, onChoose, onCancel }) { return <div className="promotion-modal" role="dialog" aria-modal="true"><div><p>Promote your pawn</p><section>{['q', 'r', 'b', 'n'].map((type) => <button key={type} onClick={() => onChoose(type)}><span className={color}>{glyph[color][type]}</span><small>{pieceName[type]}</small></button>)}</section><button className="cancel-promotion" onClick={onCancel}>Cancel</button></div></div>; }
 function AppearanceControls({ boardSkin, setBoardSkin, pieceSkin, setPieceSkin, connected, settingsOpen, setSettingsOpen }) { return <section className="appearance-controls" aria-label="Board appearance and quick actions"><div className="playing-set-copy"><p className="label">PLAYING SET</p><h3>Make the board yours</h3><p>Change the classic board and piece finish at any time.</p></div><div className="playing-set-actions"><span className="online-status"><i className="online-dot" data-online={connected}></i>{connected ? 'SERVER CONNECTED' : 'PLAY IN BROWSER'}</span><button className="global-settings-trigger" onClick={() => setSettingsOpen((value) => !value)} aria-expanded={settingsOpen} aria-controls="global-settings">⚙ <span>Settings</span></button></div><div className="appearance-choice"><span>Board</span>{[['classic', 'Classic'], ['walnut', 'Walnut'], ['ocean', 'Ocean']].map(([key, label]) => <button key={key} className={boardSkin === key ? 'on' : ''} onClick={() => setBoardSkin(key)}>{label}</button>)}</div><div className="appearance-choice"><span>Pieces</span>{[['classic', 'Ivory'], ['onyx', 'Onyx'], ['gold', 'Gold']].map(([key, label]) => <button key={key} className={pieceSkin === key ? 'on' : ''} onClick={() => setPieceSkin(key)}>{label}</button>)}</div></section>; }
 function ChartGameReview({ items, onOpen }) {
-  const canvasRef = useRef(null); const chartRef = useRef(null); const [chartError, setChartError] = useState('');
+  const canvasRef = useRef(null); const chartRef = useRef(null); const [chartError, setChartError] = useState(''); const [expanded, setExpanded] = useState(false);
   const white = items.filter((item) => item.ply % 2 === 1); const black = items.filter((item) => item.ply % 2 === 0);
   const summary = (side) => ({ accuracy: Math.max(0, Math.round(100 - side.reduce((sum, item) => sum + item.loss, 0) / Math.max(1, side.length))), counts: side.reduce((all, item) => ({ ...all, [item.quality]: (all[item.quality] || 0) + 1 }), {}) });
   const whiteSummary = summary(white); const blackSummary = summary(black); const turning = items.filter((item) => ['mistake', 'blunder', 'inaccuracy'].includes(item.quality));
@@ -477,7 +511,8 @@ function ChartGameReview({ items, onOpen }) {
     frame = requestAnimationFrame(() => { void render(); });
     return () => { cancelled = true; cancelAnimationFrame(frame); chartRef.current?.destroy(); chartRef.current = null; };
   }, [items]);
-  return <section className="review"><div className="review-heading"><div><p className="label">GAME REVIEW · EVALUATION</p><h3>Accuracy by move</h3></div><span>{items.length} moves checked</span></div><div className="accuracy-grid"><Accuracy side="White" value={whiteSummary.accuracy} counts={whiteSummary.counts} /><Accuracy side="Black" value={blackSummary.accuracy} counts={blackSummary.counts} /></div><div className="chart-wrap chartjs-wrap"><canvas ref={canvasRef} aria-label="Interactive Chart.js evaluation graph" />{chartError && <div className="chart-fallback chart-fallback-overlay">Chart unavailable — use the turning points below.<small>{chartError}</small></div>}</div><div className="chart-footer"><span>White edge</span><span>Click to explore</span><span>Black edge</span></div><div className="turning-points"><p className="label">TURNING POINTS</p>{turning.length ? turning.map((item) => <button key={item.ply} className={`review-move ${qualityClass(item.quality)}`} onClick={() => onOpen(item)}><span>{Math.ceil(item.ply / 2)}{item.ply % 2 ? '. White' : '… Black'} · {item.san}</span><b>{qualityLabel[item.quality]}</b></button>) : <p className="subtle">No major mistakes detected.</p>}</div></section>;
+  useEffect(() => { const frame = requestAnimationFrame(() => chartRef.current?.resize()); return () => cancelAnimationFrame(frame); }, [expanded]);
+  return <section className="review"><div className="review-heading"><div><p className="label">GAME REVIEW - EVALUATION</p><h3>Accuracy by move</h3></div><span>{items.length} moves checked</span></div><div className="accuracy-grid"><Accuracy side="White" value={whiteSummary.accuracy} counts={whiteSummary.counts} /><Accuracy side="Black" value={blackSummary.accuracy} counts={blackSummary.counts} /></div><div className={`chart-stage ${expanded ? 'expanded' : ''}`} role={expanded ? 'dialog' : undefined} aria-modal={expanded ? 'true' : undefined} aria-label={expanded ? 'Expanded game evaluation graph' : undefined}><div className="chart-stage-heading"><div><strong>Engine evaluation</strong><small>Tap any point to inspect that position</small></div><button type="button" onClick={() => setExpanded((value) => !value)} aria-label={expanded ? 'Close large graph' : 'View large graph'}>{expanded ? 'Close' : 'View large graph'}</button></div><div className="chart-wrap chartjs-wrap"><canvas ref={canvasRef} aria-label="Interactive Chart.js evaluation graph" />{chartError && <div className="chart-fallback chart-fallback-overlay">Chart unavailable - use the turning points below.<small>{chartError}</small></div>}</div><div className="chart-footer"><span>Move 1</span><span>White win chance</span><span>Move {items.length}</span></div></div><div className="turning-points"><p className="label">TURNING POINTS</p>{turning.length ? turning.map((item) => <button key={item.ply} className={`review-move ${qualityClass(item.quality)}`} onClick={() => onOpen(item)}><span>{Math.ceil(item.ply / 2)}{item.ply % 2 ? '. White' : '... Black'} - {item.san}</span><b>{qualityLabel[item.quality]}</b></button>) : <p className="subtle">No major mistakes detected.</p>}</div></section>;
 }
 
 function GameReview({ items, onOpen }) {

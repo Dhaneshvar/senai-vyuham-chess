@@ -1,4 +1,4 @@
-// Static character sculpts from King's Gambit — Medieval 3D Chess.
+// Static character sculpts from King's Gambit - Medieval 3D Chess.
 // Source and license: https://github.com/ade5791/rork-medieval-3d-chess (MIT).
 // The procedural chess set remains available when a remote model cannot load.
 const MODEL_BASE = 'https://r2-pub.rork.com/generated-3d-models/g9111r67kl6tq85g540sd';
