@@ -164,6 +164,18 @@ io.on('connection', (socket) => {
     void persistGame(game).catch(console.error);
     const state = view(game); io.to(game.id).emit('game:state', state); reply(callback, { ok: true, color, game: state });
   });
+  socket.on('game:leave', (input = {}, callback) => {
+    if (!socketAllowed(socket, 'game:leave', 20)) return reply(callback, { ok: false, error: 'Too many room requests. Please wait.' });
+    const game = games.get(String(input.gameId ?? '').toUpperCase());
+    if (!game) return reply(callback, { ok: false, error: 'Game not found' });
+    const side = ['w', 'b'].find((color) => game.players[color]?.token === socket.data.token);
+    if (!side) return reply(callback, { ok: false, error: 'Not a player' });
+    if (game.players[side].socketId === socket.id) game.players[side].socketId = null;
+    socket.leave(game.id);
+    void persistGame(game).catch(console.error);
+    io.to(game.id).emit('game:state', view(game));
+    reply(callback, { ok: true, gameId: game.id, color: side });
+  });
   socket.on('game:move', (input = {}, callback) => {
     const game = games.get(String(input.gameId ?? '').toUpperCase());
     if (!game || game.status !== 'active') return reply(callback, { ok: false, error: 'Game is unavailable' });

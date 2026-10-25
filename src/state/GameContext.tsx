@@ -15,11 +15,11 @@ type Setup = { time: number; increment: number; color: 'w' | 'b' | 'random'; nam
 type Ack = { ok: boolean; error?: string; color?: Side; game?: WireGame };
 type GameContextValue = {
   fen: string; pgn: string; moves: Move[]; turn: Side; status: 'idle' | 'waiting' | 'active' | 'finished';
-  mode: GameMode; orientation: Side; playerColor: Side; gameId: string | null;
+  mode: GameMode; orientation: Side; playerColor: Side; gameId: string | null; lastRoomId: string | null;
   whiteTime: number; blackTime: number; time: number; increment: number;
   result: Result; reason: string; apiUrl: string; haptics: boolean; sound: boolean; music: boolean; showCoordinates: boolean; graphicsQuality: GraphicsQuality; cameraPreset: ThreeCameraPreset; boardTheme: BoardTheme; pieceFinish: PieceFinish; threePieceStyle: ThreePieceStyle;
   serverConnected: boolean; onlinePlayers: WireGame['players'] | null;
-  startLocal: (setup: Setup) => void; createRoom: (setup: Setup) => Promise<string>; joinRoom: (roomId: string, playerName?: string) => Promise<void>;
+  startLocal: (setup: Setup) => void; createRoom: (setup: Setup) => Promise<string>; joinRoom: (roomId: string, playerName?: string) => Promise<void>; leaveRoom: () => Promise<void>; rejoinRoom: () => Promise<void>;
   play: (from: Square, to: Square, promotion?: string) => Promise<boolean>; resign: () => void; offerDraw: () => void;
   setApiUrl: (url: string) => void; setHaptics: (enabled: boolean) => void; setSound: (enabled: boolean) => void; setMusic: (enabled: boolean) => void; setShowCoordinates: (enabled: boolean) => void; setGraphicsQuality: (quality: GraphicsQuality) => void; setCameraPreset: (preset: ThreeCameraPreset) => void; setBoardTheme: (theme: BoardTheme) => void; setPieceFinish: (finish: PieceFinish) => void; setThreePieceStyle: (style: ThreePieceStyle) => void;
   flip: () => void;
@@ -46,6 +46,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [orientation, setOrientation] = useState<Side>('w');
   const [playerColor, setPlayerColor] = useState<Side>('w');
   const [gameId, setGameId] = useState<string | null>(null);
+  const [lastRoomId, setLastRoomId] = useState<string | null>(null);
   const [status, setStatus] = useState<GameContextValue['status']>('idle');
   const [time, setTime] = useState(600);
   const [increment, setIncrement] = useState(0);
@@ -130,7 +131,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     chess.current = next;
     onlineRoom.current = wire.id;
     setBoardState(boardSnapshot(next));
-    setGameId(wire.id); setStatus(wire.status); setResult(wire.result ?? '*'); setReason(wire.reason ?? '');
+    setGameId(wire.id); setLastRoomId(wire.id); setStatus(wire.status); setResult(wire.result ?? '*'); setReason(wire.reason ?? '');
     setTime(wire.time); setIncrement(wire.increment);
     setWhiteTime(wire.clocks.w); setBlackTime(wire.clocks.b); setOnlinePlayers(wire.players);
   }, []);
@@ -192,6 +193,17 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, [sync]);
   const createRoom = useCallback((setup: Setup) => online('game:create', { time: setup.time, increment: setup.increment, color: setup.color, playerName: setup.name?.trim() || 'Player 1' }), [online]);
   const joinRoom = useCallback(async (roomId: string, playerName?: string) => { await online('game:join', { gameId: roomId.trim().toUpperCase(), playerName: playerName?.trim() || 'Player 2' }); }, [online]);
+  const leaveRoom = useCallback(async () => {
+    const client = socket.current; const room = gameId;
+    if (!client?.connected || !room) return;
+    const ack = await client.timeout(10000).emitWithAck('game:leave', { gameId: room }) as Ack;
+    if (!ack.ok) throw new Error(ack.error ?? 'Could not leave room');
+    onlineRoom.current = null; setLastRoomId(room); setGameId(null); setOnlinePlayers(null); setStatus('idle');
+  }, [gameId]);
+  const rejoinRoom = useCallback(async () => {
+    if (!lastRoomId) throw new Error('No recent room is available');
+    await online('game:join', { gameId: lastRoomId });
+  }, [lastRoomId, online]);
   const play = useCallback(async (from: Square, to: Square, promotion = 'q') => {
     if (status !== 'active') return false;
     if (mode === 'online') {
@@ -232,10 +244,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const setPieceFinish = (value: PieceFinish) => { setPieceFinishState(value); void setSetting('pieceFinish', value); };
   const setThreePieceStyle = (value: ThreePieceStyle) => { setThreePieceStyleState(value); void setSetting('threePieceStyle', value); };
   const value = useMemo<GameContextValue>(() => ({
-    ...boardState, status, mode, orientation, playerColor, gameId,
+    ...boardState, status, mode, orientation, playerColor, gameId, lastRoomId,
     whiteTime, blackTime, time, increment, result, reason, apiUrl: apiUrlState, haptics: hapticsState, sound: soundState, music: musicState, showCoordinates, graphicsQuality, cameraPreset, boardTheme, pieceFinish, threePieceStyle, serverConnected, onlinePlayers,
-    startLocal: setupLocal, createRoom, joinRoom, play, resign, offerDraw, setApiUrl, setHaptics, setSound, setMusic, setShowCoordinates, setGraphicsQuality, setCameraPreset, setBoardTheme, setPieceFinish, setThreePieceStyle, flip: () => setOrientation((value) => value === 'w' ? 'b' : 'w'),
-  }), [boardState, status, mode, orientation, playerColor, gameId, whiteTime, blackTime, time, increment, result, reason, apiUrlState, hapticsState, soundState, musicState, showCoordinates, graphicsQuality, cameraPreset, boardTheme, pieceFinish, threePieceStyle, serverConnected, onlinePlayers, setupLocal, createRoom, joinRoom, play, resign, offerDraw]);
+    startLocal: setupLocal, createRoom, joinRoom, leaveRoom, rejoinRoom, play, resign, offerDraw, setApiUrl, setHaptics, setSound, setMusic, setShowCoordinates, setGraphicsQuality, setCameraPreset, setBoardTheme, setPieceFinish, setThreePieceStyle, flip: () => setOrientation((value) => value === 'w' ? 'b' : 'w'),
+  }), [boardState, status, mode, orientation, playerColor, gameId, lastRoomId, whiteTime, blackTime, time, increment, result, reason, apiUrlState, hapticsState, soundState, musicState, showCoordinates, graphicsQuality, cameraPreset, boardTheme, pieceFinish, threePieceStyle, serverConnected, onlinePlayers, setupLocal, createRoom, joinRoom, leaveRoom, rejoinRoom, play, resign, offerDraw]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 export function useGame() { const value = useContext(Context); if (!value) throw new Error('GameProvider missing'); return value; }

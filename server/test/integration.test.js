@@ -5,7 +5,7 @@ import { io } from 'socket.io-client';
 
 const port = 34000 + Math.floor(Math.random() * 10000);
 const url = `http://127.0.0.1:${port}`;
-const child = spawn(process.execPath, ['src/index.js'], { env: { ...process.env, PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+const child = spawn(process.execPath, ['src/index.js'], { env: { ...process.env, DATABASE_URL: '', PORT: String(port) }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
 const sockets = [];
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function ready() {
@@ -32,10 +32,20 @@ test('two players, legal moves, turn validation, reconnect, and engine analysis'
   assert.equal(first.ok, true); assert.equal(first.game.clocks.w, 62);
   const second = await black.emitWithAck('game:move', { gameId: id, from: 'e7', to: 'e5' });
   assert.equal(second.ok, true); assert.match(second.game.pgn, /e4 e5/);
+  const left = await black.emitWithAck('game:leave', { gameId: id });
+  assert.equal(left.ok, true); assert.equal(left.gameId, id); assert.equal(left.color, 'b');
+  const leftState = await (await fetch(`${url}/games/${id}`)).json();
+  assert.equal(leftState.players.b.name, 'Bob'); assert.equal(leftState.players.b.connected, false);
+  const offlineMove = await white.emitWithAck('game:move', { gameId: id, from: 'g1', to: 'f3' });
+  assert.equal(offlineMove.ok, true);
   black.disconnect();
   const blackAgain = await client('black-testing-token-12345');
   const rejoined = await blackAgain.emitWithAck('game:join', { gameId: id });
-  assert.equal(rejoined.ok, true); assert.equal(rejoined.color, 'b');
+  assert.equal(rejoined.ok, true); assert.equal(rejoined.color, 'b'); assert.match(rejoined.game.pgn, /Nf3/);
+  const resigned = await blackAgain.emitWithAck('game:resign', { gameId: id });
+  assert.equal(resigned.ok, true);
+  const finalState = await (await fetch(`${url}/games/${id}`)).json();
+  assert.equal(finalState.result, '1-0'); assert.equal(finalState.reason, 'resignation');
   const response = await fetch(`${url}/analysis/position`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fen: second.game.fen, depth: 8, lines: 2 }) });
   assert.equal(response.status, 200);
   const analysis = await response.json();
