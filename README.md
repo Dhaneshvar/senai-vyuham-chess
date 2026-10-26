@@ -75,3 +75,5 @@ Run the release security checks in [`docs/SECURITY.md`](./docs/SECURITY.md) befo
 ## Remaining phase-six work
 
 True floor-anchored AR and VR require a compatible native AR framework, device capability checks, and physical-device tests. The current camera view is deliberately labeled as a preview. The procedural 3D mode also needs device performance/interaction QA and art polish before release. The iOS binary cannot be validated on this Windows workstation without an iOS device/cloud build.
+
+Planned online-room communication features (session-only text chat and optional, non-recorded voice chat) are documented in [`docs/ROADMAP.md`](./docs/ROADMAP.md). They are not implemented yet.
