@@ -8,7 +8,10 @@ const enginePath = require('stockfish').findEngine('lite-single');
 export function scoreToChance(score) {
   if (score?.mate != null) return score.mate > 0 ? 100 : 0;
   const cp = score?.cp ?? 0;
-  return Math.round(100 / (1 + Math.exp(-cp / 180)));
+  // A centipawn evaluation is not itself a win percentage. A wider curve
+  // keeps normal opening advantages close to even, while forced mates remain
+  // decisive at 0% or 100%.
+  return Math.round(100 / (1 + Math.exp(-cp / 300)));
 }
 
 function parseInfo(line) {

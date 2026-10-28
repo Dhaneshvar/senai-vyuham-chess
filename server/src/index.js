@@ -75,6 +75,27 @@ function finishIfOver(game) {
   game.reason = game.chess.isCheckmate() ? 'checkmate' : 'draw';
 }
 
+// Stockfish has no continuation for a completed position. A review must still
+// mark that position as decisive instead of falling back to a neutral 50%.
+async function reviewPosition(fen) {
+  const chess = new Chess(fen);
+  if (chess.isCheckmate()) {
+    const whiteWon = chess.turn() === 'b';
+    return { fen, depth: 0, engine: 'Senai Vyuham Intelligent Engine', lines: [{ rank: 1, depth: 0, pv: [], san: [], whiteScore: { mate: whiteWon ? 1 : -1 }, whiteChance: whiteWon ? 100 : 0 }] };
+  }
+  if (chess.isDraw()) {
+    return { fen, depth: 0, engine: 'Senai Vyuham Intelligent Engine', lines: [{ rank: 1, depth: 0, pv: [], san: [], whiteScore: { cp: 0 }, whiteChance: 50 }] };
+  }
+  return analysisQueue.analyze(fen, { depth: 12, lines: 2 });
+}
+
+function reviewResult(chess) {
+  if (chess.isCheckmate()) return { result: chess.turn() === 'w' ? '0-1' : '1-0', reason: 'checkmate' };
+  if (chess.isDraw()) return { result: '1/2-1/2', reason: 'draw' };
+  const headerResult = chess.getHeaders?.().Result;
+  return { result: ['1-0', '0-1', '1/2-1/2'].includes(headerResult) ? headerResult : '*', reason: null };
+}
+
 app.get('/health', (_req, res) => res.json({ ok: true, games: games.size, storage: storageMode(), analysisQueue: analysisQueue.pending.length }));
 app.get('/games/:id', requestLimit(60, 60_000), (req, res) => {
   const game = games.get(req.params.id.toUpperCase());
@@ -95,17 +116,17 @@ app.post('/analysis/review', requestLimit(4, 60_000), (req, res) => {
   const moves = chess.history({ verbose: true });
   if (!moves.length || moves.length > 400) return res.status(400).json({ error: 'Unsupported game length' });
   activeReviewJobs++;
-  const job = { id: randomUUID(), status: 'queued', completed: 0, total: moves.length, items: [], error: null, createdAt: Date.now() };
+  const job = { id: randomUUID(), status: 'queued', completed: 0, total: moves.length, items: [], error: null, result: '*', reason: null, createdAt: Date.now() };
   reviews.set(job.id, job); res.status(202).json({ id: job.id, status: job.status });
   void (async () => {
     job.status = 'running';
     try {
       const replay = new Chess();
-      let best = await analysisQueue.analyze(replay.fen(), { depth: 8, lines: 2 });
+      let best = await reviewPosition(replay.fen());
       for (const played of moves) {
         const before = replay.fen();
         replay.move(played); const after = replay.fen();
-        const actual = await analysisQueue.analyze(after, { depth: 8, lines: 2 });
+        const actual = await reviewPosition(after);
         const bestChance = best.lines[0]?.whiteChance ?? 50;
         const actualChance = actual.lines[0]?.whiteChance ?? 50;
         const loss = played.color === 'w' ? bestChance - actualChance : actualChance - bestChance;
@@ -120,6 +141,9 @@ app.post('/analysis/review', requestLimit(4, 60_000), (req, res) => {
         job.completed++;
         best = actual;
       }
+      const outcome = reviewResult(chess);
+      job.result = outcome.result;
+      job.reason = outcome.reason;
       job.status = 'complete';
     } catch (error) { job.status = 'failed'; job.error = error.message; }
     finally { activeReviewJobs = Math.max(0, activeReviewJobs - 1); }
